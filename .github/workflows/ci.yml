@@ -21,12 +21,15 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
       - run: npm ci
-      - name: Build @sbp/types
-        run: cd packages/types && npx tsc
+      - name: Build types
+        working-directory: packages/types
+        run: npx tsc
       - name: Type-check server
-        run: cd packages/server && npx tsc --noEmit
+        working-directory: packages/server
+        run: npx tsc --noEmit
       - name: Test server
-        run: cd packages/server && npm test
+        working-directory: packages/server
+        run: npm test
 
   test-client-ts:
     runs-on: ubuntu-latest
@@ -38,7 +41,8 @@ jobs:
           cache: "npm"
       - run: npm ci
       - name: Build client
-        run: cd packages/client-ts && npm run build
+        working-directory: packages/client-ts
+        run: npm run build
 
   # ── Test: Python ──────────────────────────────────────────────
   test-client-python:
@@ -52,13 +56,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: |
-          cd packages/client-python
-          pip install -e ".[dev]"
+        working-directory: packages/client-python
+        run: pip install -e ".[dev]"
       - name: Lint
-        run: cd packages/client-python && ruff check src/ || true
+        working-directory: packages/client-python
+        run: ruff check src/ || true
       - name: Test
-        run: cd packages/client-python && pytest || true
+        working-directory: packages/client-python
+        run: pytest || true
 
   # ── Publish: npm (only on version tags) ───────────────────────
   publish-npm:
@@ -76,22 +81,22 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
       - name: Publish @advicenxt/sbp-types
+        working-directory: packages/types
         run: |
-          cd packages/types
           npx tsc
           npm publish --access public --provenance || true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish @advicenxt/sbp-server
+        working-directory: packages/server
         run: |
-          cd packages/server
           npm run build
           npm publish --access public --provenance || true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish @advicenxt/sbp-client
+        working-directory: packages/client-ts
         run: |
-          cd packages/client-ts
           npm run build
           npm publish --access public --provenance || true
         env:
@@ -108,8 +113,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Build and publish
+        working-directory: packages/client-python
         run: |
-          cd packages/client-python
           pip install build twine
           python -m build
           twine upload dist/* || true
