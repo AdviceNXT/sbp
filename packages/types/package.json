@@ -31,12 +31,12 @@
     "author": "adviceNXT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/advicenxt/sbp",
+        "url": "https://github.com/AdviceNXT/sbp",
         "directory": "packages/types"
     },
     "homepage": "https://sbp.dev",
     "bugs": {
-        "url": "https://github.com/advicenxt/sbp/issues"
+        "url": "https://github.com/AdviceNXT/sbp/issues"
     },
     "devDependencies": {
         "typescript": "^5.3.0"

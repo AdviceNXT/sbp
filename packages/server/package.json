@@ -34,12 +34,12 @@
   "author": "SBP Contributors",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sbp-protocol/sbp.git",
+    "url": "https://github.com/AdviceNXT/sbp.git",
     "directory": "packages/server"
   },
   "homepage": "https://sbp.dev",
   "bugs": {
-    "url": "https://github.com/sbp-protocol/sbp/issues"
+    "url": "https://github.com/AdviceNXT/sbp/issues"
   },
   "license": "MIT",
   "dependencies": {
