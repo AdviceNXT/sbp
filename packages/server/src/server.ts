@@ -16,7 +16,10 @@ import type {
   InspectParams,
   TriggerPayload,
 } from "./types.js";
-import { randomUUID } from "crypto";
+import { v7 as uuidv7 } from "uuid";
+import { validateEnvelope, validateParams } from "./validation.js";
+import { createAuthHook, type AuthOptions } from "./auth.js";
+import { createRateLimitHook, type RateLimitOptions } from "./rate-limiter.js";
 
 export interface ServerOptions extends BlackboardOptions {
   /** HTTP port (default: 3000) */
@@ -27,6 +30,10 @@ export interface ServerOptions extends BlackboardOptions {
   cors?: boolean;
   /** Request logging (default: false) */
   logging?: boolean;
+  /** Authentication options */
+  auth?: AuthOptions;
+  /** Rate limiting options */
+  rateLimit?: RateLimitOptions;
 }
 
 interface SSEClient {
@@ -40,7 +47,10 @@ interface SSEClient {
 export class SbpServer {
   private app: FastifyInstance;
   public readonly blackboard: Blackboard;
-  private options: Required<ServerOptions>;
+  private options: Required<Omit<ServerOptions, "auth" | "rateLimit" | "store">> & {
+    auth?: AuthOptions;
+    rateLimit?: RateLimitOptions;
+  };
   private sseClients = new Map<string, SSEClient>();
   private sessions = new Map<string, { agentId: string; createdAt: number }>();
   private eventCounter = 0;
@@ -57,6 +67,8 @@ export class SbpServer {
       maxPheromones: options.maxPheromones ?? 100000,
       trackEmissionHistory: options.trackEmissionHistory ?? true,
       emissionHistoryWindow: options.emissionHistoryWindow ?? 60000,
+      auth: options.auth,
+      rateLimit: options.rateLimit,
     };
 
     this.blackboard = new Blackboard(this.options);
@@ -66,6 +78,16 @@ export class SbpServer {
   }
 
   private setupRoutes(): void {
+    // Authentication hook
+    if (this.options.auth?.requireAuth) {
+      this.app.addHook("onRequest", createAuthHook(this.options.auth));
+    }
+
+    // Rate limiting hook
+    if (this.options.rateLimit) {
+      this.app.addHook("onRequest", createRateLimitHook(this.options.rateLimit));
+    }
+
     // CORS
     if (this.options.cors) {
       this.app.addHook("onRequest", async (request, reply) => {
@@ -73,7 +95,7 @@ export class SbpServer {
         reply.header("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS");
         reply.header(
           "Access-Control-Allow-Headers",
-          "Content-Type, Accept, Sbp-Protocol-Version, Sbp-Session-Id, Sbp-Agent-Id, Last-Event-ID"
+          "Content-Type, Accept, Authorization, Sbp-Protocol-Version, Sbp-Session-Id, Sbp-Agent-Id, Last-Event-ID"
         );
 
         if (request.method === "OPTIONS") {
@@ -143,12 +165,40 @@ export class SbpServer {
    * Handle POST requests (client -> server messages)
    */
   private async handlePost(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
-    const body = request.body as JsonRpcRequest;
+    // Validate JSON-RPC envelope
+    const envelopeResult = validateEnvelope(request.body);
+    if (!envelopeResult.ok) {
+      reply.header("Content-Type", "application/json");
+      return {
+        jsonrpc: "2.0",
+        id: null,
+        error: envelopeResult.error,
+      };
+    }
+
+    const body = envelopeResult.request;
+
+    // Validate method-specific params
+    const paramsResult = validateParams(body.method, body.params);
+    if (!paramsResult.ok) {
+      reply.header("Content-Type", "application/json");
+      return {
+        jsonrpc: "2.0",
+        id: body.id,
+        error: paramsResult.error,
+      };
+    }
+
+    // Replace params with validated (parsed) params
+    const validatedRequest: JsonRpcRequest = {
+      ...body,
+      params: paramsResult.params,
+    };
 
     // Get or create session
     let sessionId = request.headers["sbp-session-id"] as string | undefined;
     if (!sessionId) {
-      sessionId = randomUUID();
+      sessionId = uuidv7();
       this.sessions.set(sessionId, {
         agentId: (request.headers["sbp-agent-id"] as string) || "unknown",
         createdAt: Date.now(),
@@ -156,7 +206,7 @@ export class SbpServer {
     }
 
     // Handle JSON-RPC request
-    const response = await this.handleRpc(body, request);
+    const response = await this.handleRpc(validatedRequest, request);
 
     // Set session header
     reply.header("Sbp-Session-Id", sessionId);
@@ -176,9 +226,9 @@ export class SbpServer {
       return;
     }
 
-    const sessionId = (request.headers["sbp-session-id"] as string) || randomUUID();
+    const sessionId = (request.headers["sbp-session-id"] as string) || uuidv7();
     const lastEventId = request.headers["last-event-id"] as string | undefined;
-    const clientId = randomUUID();
+    const clientId = uuidv7();
 
     // Set up SSE headers
     reply.raw.writeHead(200, {
@@ -274,9 +324,14 @@ export class SbpServer {
           const scentParams = params as RegisterScentParams;
           result = this.blackboard.registerScent(scentParams);
 
-          // Set up SSE trigger forwarding for this session
+          // Set up trigger forwarding
           if (sessionId) {
             this.setupSSETrigger(scentParams.scent_id, sessionId);
+          }
+
+          // If agent_endpoint is provided, set up webhook delivery
+          if (scentParams.agent_endpoint) {
+            this.setupWebhookTrigger(scentParams.scent_id, scentParams.agent_endpoint);
           }
           break;
         }
@@ -366,6 +421,46 @@ export class SbpServer {
     });
   }
 
+  /**
+   * Set up webhook trigger delivery to an agent endpoint
+   */
+  private setupWebhookTrigger(scentId: string, endpoint: string): void {
+    this.blackboard.onTrigger(scentId, async (payload: TriggerPayload) => {
+      // Attempt webhook delivery with one retry
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Sbp-Protocol-Version": "0.1",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "sbp/trigger",
+              params: payload,
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (response.ok) return; // Success
+
+          // Retry on 5xx
+          if (response.status >= 500 && attempt === 0) {
+            await new Promise((r) => setTimeout(r, 1000));
+            continue;
+          }
+          break; // Don't retry on 4xx
+        } catch {
+          // Network error — retry once
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+      }
+    });
+  }
+
   async start(): Promise<void> {
     // Start blackboard evaluation loop
     this.blackboard.start();
@@ -376,6 +471,12 @@ export class SbpServer {
     console.log(`[SBP] Server listening on http://${this.options.host}:${this.options.port}`);
     console.log(`[SBP] Streamable HTTP endpoint: POST/GET ${this.address}/sbp`);
     console.log(`[SBP] Transport: SSE (Server-Sent Events)`);
+    if (this.options.auth?.requireAuth) {
+      console.log(`[SBP] Authentication: API key required`);
+    }
+    if (this.options.rateLimit) {
+      console.log(`[SBP] Rate limiting: ${this.options.rateLimit.maxRequests ?? 1000} req/${(this.options.rateLimit.windowMs ?? 60000) / 1000}s`);
+    }
   }
 
   async stop(): Promise<void> {

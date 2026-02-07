@@ -96,7 +96,21 @@ export interface RateCondition {
   value: number;
 }
 
-export type ScentCondition = ThresholdCondition | CompositeCondition | RateCondition;
+export interface PatternCondition {
+  type: "pattern";
+  /** Sequence of pheromone types to match */
+  sequence: Array<{
+    trail: string;
+    signal_type: string;
+    min_intensity?: number;
+  }>;
+  /** Time window in which the full sequence must appear */
+  window_ms: number;
+  /** Whether the sequence must appear in order (default: true) */
+  ordered?: boolean;
+}
+
+export type ScentCondition = ThresholdCondition | CompositeCondition | RateCondition | PatternCondition;
 
 // ============================================================================
 // SCENT REGISTRATION

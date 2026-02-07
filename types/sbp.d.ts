@@ -109,7 +109,8 @@ export interface PatternCondition {
     signal_type: string;
     min_intensity?: number;
   }>;
-  within_ms: number;
+  window_ms: number;
+  ordered?: boolean;
 }
 
 export type ScentCondition =
@@ -317,35 +318,9 @@ export interface SbpAgentHandler {
 /**
  * Compute current intensity of a pheromone at a given time
  */
-export function computeIntensity(pheromone: Pheromone, now: number): number {
-  const elapsed = now - pheromone.last_reinforced_at;
-
-  switch (pheromone.decay_model.type) {
-    case "exponential": {
-      const halfLife = pheromone.decay_model.half_life_ms;
-      return pheromone.initial_intensity * Math.pow(0.5, elapsed / halfLife);
-    }
-    case "linear": {
-      const rate = pheromone.decay_model.rate_per_ms;
-      return Math.max(0, pheromone.initial_intensity - rate * elapsed);
-    }
-    case "step": {
-      const steps = pheromone.decay_model.steps;
-      for (let i = steps.length - 1; i >= 0; i--) {
-        if (elapsed >= steps[i].at_ms) return steps[i].intensity;
-      }
-      return pheromone.initial_intensity;
-    }
-    case "immortal":
-      return pheromone.initial_intensity;
-  }
-}
+export function computeIntensity(pheromone: Pheromone, now: number): number;
 
 /**
  * Check if a pheromone has evaporated
  */
-export function isEvaporated(pheromone: Pheromone, now: number): boolean {
-  const intensity = computeIntensity(pheromone, now);
-  const floor = pheromone.ttl_floor ?? 0.01;
-  return intensity < floor;
-}
+export function isEvaporated(pheromone: Pheromone, now: number): boolean;

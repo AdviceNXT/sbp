@@ -25,6 +25,16 @@
     "coordination",
     "sse"
   ],
+  "author": "SBP Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sbp-protocol/sbp.git",
+    "directory": "packages/client-ts"
+  },
+  "homepage": "https://sbp.dev",
+  "bugs": {
+    "url": "https://github.com/sbp-protocol/sbp/issues"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.11.0",

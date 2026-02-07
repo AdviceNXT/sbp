@@ -2,7 +2,9 @@
  * SBP Blackboard - Core State Management
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
+import type { PheromoneStore } from "./store.js";
+import { MemoryStore } from "./store.js";
 import type {
   Pheromone,
   PheromoneSnapshot,
@@ -41,6 +43,8 @@ export interface BlackboardOptions {
   trackEmissionHistory?: boolean;
   /** How long to keep emission history (ms) */
   emissionHistoryWindow?: number;
+  /** Pluggable pheromone storage backend (default: MemoryStore) */
+  store?: PheromoneStore;
 }
 
 export interface TriggerHandler {
@@ -48,16 +52,17 @@ export interface TriggerHandler {
 }
 
 export class Blackboard {
-  private pheromones = new Map<string, Pheromone>();
+  private store: PheromoneStore;
   private scents = new Map<string, Scent>();
   private triggerHandlers = new Map<string, TriggerHandler>();
   private emissionHistory: Array<{ trail: string; type: string; timestamp: number }> = [];
   private evaluationTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
 
-  private options: Required<BlackboardOptions>;
+  private options: Omit<Required<BlackboardOptions>, "store">;
 
   constructor(options: BlackboardOptions = {}) {
+    this.store = options.store ?? new MemoryStore();
     this.options = {
       evaluationInterval: options.evaluationInterval ?? 100,
       defaultDecay: options.defaultDecay ?? defaultDecay(),
@@ -100,7 +105,7 @@ export class Blackboard {
     // Find existing pheromone for merge
     let existing: Pheromone | undefined;
     if (merge_strategy !== "new") {
-      for (const p of this.pheromones.values()) {
+      for (const p of this.store.values()) {
         if (
           p.trail === trail &&
           p.type === type &&
@@ -155,7 +160,7 @@ export class Blackboard {
     }
 
     // Create new pheromone
-    const id = uuidv4();
+    const id = uuidv7();
     const pheromone: Pheromone = {
       id,
       trail,
@@ -170,10 +175,10 @@ export class Blackboard {
       ttl_floor: this.options.defaultTtlFloor,
     };
 
-    this.pheromones.set(id, pheromone);
+    this.store.set(id, pheromone);
 
     // Trigger GC if needed
-    if (this.pheromones.size > this.options.maxPheromones) {
+    if (this.store.size > this.options.maxPheromones) {
       this.gc();
     }
 
@@ -203,7 +208,7 @@ export class Blackboard {
     const results: PheromoneSnapshot[] = [];
     const aggregates = new Map<string, { count: number; sum: number; max: number }>();
 
-    for (const p of this.pheromones.values()) {
+    for (const p of this.store.values()) {
       // Filter by trail
       if (trails && trails.length > 0 && !trails.includes(p.trail)) continue;
 
@@ -294,7 +299,7 @@ export class Blackboard {
     // Evaluate current state
     const now = Date.now();
     const evalResult = evaluateCondition(condition, {
-      pheromones: [...this.pheromones.values()],
+      pheromones: [...this.store.values()],
       now,
       emissionHistory: this.emissionHistory,
     });
@@ -335,7 +340,7 @@ export class Blackboard {
     const toRemove: string[] = [];
     const trailsAffected = new Set<string>();
 
-    for (const [id, p] of this.pheromones) {
+    for (const [id, p] of this.store.entries()) {
       if (trail && p.trail !== trail) continue;
       if (types && types.length > 0 && !types.includes(p.type)) continue;
       if (older_than_ms !== undefined && now - p.emitted_at < older_than_ms) continue;
@@ -347,7 +352,7 @@ export class Blackboard {
     }
 
     for (const id of toRemove) {
-      this.pheromones.delete(id);
+      this.store.delete(id);
     }
 
     return {
@@ -368,7 +373,7 @@ export class Blackboard {
     if (include.includes("trails")) {
       const trailMap = new Map<string, { count: number; intensity: number }>();
 
-      for (const p of this.pheromones.values()) {
+      for (const p of this.store.values()) {
         if (isEvaporated(p, now)) continue;
 
         const current = trailMap.get(p.trail) || { count: 0, intensity: 0 };
@@ -399,12 +404,12 @@ export class Blackboard {
 
     if (include.includes("stats")) {
       let activeCount = 0;
-      for (const p of this.pheromones.values()) {
+      for (const p of this.store.values()) {
         if (!isEvaporated(p, now)) activeCount++;
       }
 
       result.stats = {
-        total_pheromones: this.pheromones.size,
+        total_pheromones: this.store.size,
         active_pheromones: activeCount,
         total_scents: this.scents.size,
         uptime_ms: now - this.startTime,
@@ -464,7 +469,7 @@ export class Blackboard {
    */
   async evaluateScents(): Promise<void> {
     const now = Date.now();
-    const pheromones = [...this.pheromones.values()];
+    const pheromones = [...this.store.values()];
 
     for (const scent of this.scents.values()) {
       // Check cooldown
@@ -520,7 +525,7 @@ export class Blackboard {
     const contextPheromones: PheromoneSnapshot[] = [];
 
     if (contextTrails.length > 0) {
-      for (const p of this.pheromones.values()) {
+      for (const p of this.store.values()) {
         if (contextTrails.includes(p.trail) && !isEvaporated(p, now)) {
           contextPheromones.push(createSnapshot(p, now));
         }
@@ -528,7 +533,7 @@ export class Blackboard {
     } else {
       // Include matching pheromones
       for (const id of evalResult.matchingPheromoneIds) {
-        const p = this.pheromones.get(id);
+        const p = this.store.get(id);
         if (p) {
           contextPheromones.push(createSnapshot(p, now));
         }
@@ -594,14 +599,14 @@ export class Blackboard {
     const now = Date.now();
     const toRemove: string[] = [];
 
-    for (const [id, p] of this.pheromones) {
+    for (const [id, p] of this.store.entries()) {
       if (isEvaporated(p, now)) {
         toRemove.push(id);
       }
     }
 
     for (const id of toRemove) {
-      this.pheromones.delete(id);
+      this.store.delete(id);
     }
 
     return toRemove.length;
@@ -611,7 +616,7 @@ export class Blackboard {
    * Get raw pheromone count (for testing)
    */
   get size(): number {
-    return this.pheromones.size;
+    return this.store.size;
   }
 
   /**

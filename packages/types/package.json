@@ -1,0 +1,44 @@
+{
+    "name": "@sbp/types",
+    "version": "0.1.0",
+    "description": "Canonical type definitions for the Stigmergic Blackboard Protocol (SBP)",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "clean": "rimraf dist"
+    },
+    "keywords": [
+        "sbp",
+        "stigmergy",
+        "pheromone",
+        "blackboard",
+        "protocol",
+        "types"
+    ],
+    "license": "MIT",
+    "author": "adviceNXT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/advicenxt/sbp",
+        "directory": "packages/types"
+    },
+    "homepage": "https://sbp.dev",
+    "bugs": {
+        "url": "https://github.com/advicenxt/sbp/issues"
+    },
+    "devDependencies": {
+        "typescript": "^5.3.0"
+    }
+}

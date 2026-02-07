@@ -9,6 +9,7 @@ import type {
   ThresholdCondition,
   CompositeCondition,
   RateCondition,
+  PatternCondition,
   TagFilter,
 } from "./types.js";
 import { computeIntensity, isEvaporated } from "./decay.js";
@@ -39,6 +40,8 @@ export function evaluateCondition(
       return evaluateComposite(condition, ctx);
     case "rate":
       return evaluateRate(condition, ctx);
+    case "pattern":
+      return evaluatePattern(condition, ctx);
     default:
       return { met: false, value: 0, matchingPheromoneIds: [] };
   }
@@ -177,6 +180,75 @@ function evaluateRate(
     value,
     matchingPheromoneIds: [],
   };
+}
+
+/**
+ * Evaluate a pattern condition
+ * Checks if a sequence of pheromone emissions occurred within a time window
+ */
+function evaluatePattern(
+  condition: PatternCondition,
+  ctx: EvaluationContext
+): EvaluationResult {
+  const { emissionHistory = [], now } = ctx;
+  const { sequence, window_ms, ordered = true } = condition;
+
+  // Filter emissions within the window
+  const windowStart = now - window_ms;
+  const relevant = emissionHistory.filter((e) => e.timestamp >= windowStart);
+
+  if (relevant.length === 0 || sequence.length === 0) {
+    return { met: false, value: 0, matchingPheromoneIds: [] };
+  }
+
+  if (ordered) {
+    // Ordered: each step must appear after the previous one
+    let searchFrom = 0;
+    let matchCount = 0;
+
+    for (const step of sequence) {
+      let found = false;
+      for (let i = searchFrom; i < relevant.length; i++) {
+        const emission = relevant[i];
+        if (
+          emission.trail === step.trail &&
+          emission.type === step.signal_type
+        ) {
+          found = true;
+          searchFrom = i + 1;
+          matchCount++;
+          break;
+        }
+      }
+      if (!found) break;
+    }
+
+    return {
+      met: matchCount === sequence.length,
+      value: matchCount / sequence.length,
+      matchingPheromoneIds: [],
+    };
+  } else {
+    // Unordered: all steps must appear in any order
+    const remaining = [...relevant];
+    let matchCount = 0;
+
+    for (const step of sequence) {
+      const idx = remaining.findIndex(
+        (e) => e.trail === step.trail && e.type === step.signal_type
+      );
+      if (idx >= 0) {
+        remaining.splice(idx, 1);
+        matchCount++;
+      }
+    }
+
+    return {
+      met: matchCount === sequence.length,
+      value: matchCount / sequence.length,
+      matchingPheromoneIds: [],
+    };
+  }
 }
 
 /**

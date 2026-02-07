@@ -1,0 +1,716 @@
+openapi: "3.1.0"
+info:
+  title: Stigmergic Blackboard Protocol (SBP)
+  version: "0.1.0"
+  description: |
+    REST/JSON-RPC API for the Stigmergic Blackboard Protocol.
+    SBP enables decoupled, self-organizing multi-agent coordination through
+    environment-based signaling with decaying pheromones.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: SBP Maintainers
+    url: https://github.com/advicenxt/sbp
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+
+paths:
+  /sbp:
+    post:
+      operationId: jsonRpcPost
+      summary: Send a JSON-RPC request
+      description: |
+        All SBP operations (emit, sniff, register_scent, deregister_scent,
+        evaporate, inspect) are dispatched via JSON-RPC 2.0 over this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+            examples:
+              emit:
+                summary: Emit a pheromone
+                value:
+                  jsonrpc: "2.0"
+                  id: "req-1"
+                  method: "sbp/emit"
+                  params:
+                    trail: "market.signals"
+                    type: "volatility"
+                    intensity: 0.8
+                    decay: { type: "exponential", half_life_ms: 300000 }
+                    payload: { symbol: "BTC-USD", vix_equivalent: 45.2 }
+                    tags: ["crypto", "high-priority"]
+                    merge_strategy: "reinforce"
+              sniff:
+                summary: Sniff for pheromones
+                value:
+                  jsonrpc: "2.0"
+                  id: "req-2"
+                  method: "sbp/sniff"
+                  params:
+                    trails: ["market.signals"]
+                    min_intensity: 0.1
+                    limit: 50
+              register_scent:
+                summary: Register a scent condition
+                value:
+                  jsonrpc: "2.0"
+                  id: "req-3"
+                  method: "sbp/register_scent"
+                  params:
+                    scent_id: "volatility-watcher"
+                    agent_endpoint: "https://agents.example.com/handler"
+                    condition:
+                      type: "threshold"
+                      trail: "market.signals"
+                      signal_type: "volatility"
+                      aggregation: "max"
+                      operator: ">="
+                      value: 0.7
+                    cooldown_ms: 60000
+      responses:
+        "200":
+          description: JSON-RPC response (success or error)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/JsonRpcSuccessResponse"
+                  - $ref: "#/components/schemas/JsonRpcErrorResponse"
+        "400":
+          description: Malformed request (not valid JSON)
+        "401":
+          description: Missing or invalid API key
+        "429":
+          description: Rate limited
+
+    get:
+      operationId: sseStream
+      summary: Open an SSE stream for triggers
+      description: |
+        Opens a Server-Sent Events stream to receive scent trigger notifications
+        in real-time. Each event contains a JSON-RPC notification.
+      parameters:
+        - name: Sbp-Session-Id
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Last received event ID for resumability
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events stream. Each event has:
+                  - event: "message"
+                  - id: unique event ID
+                  - data: JSON-RPC trigger notification
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    # -- JSON-RPC Envelope --
+    JsonRpcRequest:
+      type: object
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+        method:
+          type: string
+          enum:
+            - sbp/emit
+            - sbp/sniff
+            - sbp/register_scent
+            - sbp/deregister_scent
+            - sbp/evaporate
+            - sbp/inspect
+        params:
+          type: object
+
+    JsonRpcSuccessResponse:
+      type: object
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+        result:
+          type: object
+
+    JsonRpcErrorResponse:
+      type: object
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+            - type: "null"
+        error:
+          $ref: "#/components/schemas/JsonRpcError"
+
+    JsonRpcError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          description: |
+            SBP error codes:
+            -32700: Parse error
+            -32600: Invalid request
+            -32601: Method not found
+            -32602: Invalid params
+            -32001: Trail not found
+            -32002: Scent not found
+            -32003: Payload validation failed
+            -32004: Rate limited
+            -32005: Unauthorized
+        message:
+          type: string
+        data:
+          description: Additional error context
+
+    # -- Decay Models --
+    DecayModel:
+      oneOf:
+        - $ref: "#/components/schemas/ExponentialDecay"
+        - $ref: "#/components/schemas/LinearDecay"
+        - $ref: "#/components/schemas/StepDecay"
+        - $ref: "#/components/schemas/ImmortalDecay"
+      discriminator:
+        propertyName: type
+
+    ExponentialDecay:
+      type: object
+      required: [type, half_life_ms]
+      properties:
+        type:
+          type: string
+          const: exponential
+        half_life_ms:
+          type: number
+          minimum: 0
+
+    LinearDecay:
+      type: object
+      required: [type, rate_per_ms]
+      properties:
+        type:
+          type: string
+          const: linear
+        rate_per_ms:
+          type: number
+          minimum: 0
+
+    StepDecay:
+      type: object
+      required: [type, steps]
+      properties:
+        type:
+          type: string
+          const: step
+        steps:
+          type: array
+          items:
+            type: object
+            required: [at_ms, intensity]
+            properties:
+              at_ms:
+                type: number
+              intensity:
+                type: number
+                minimum: 0
+                maximum: 1
+
+    ImmortalDecay:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          const: immortal
+
+    # -- Pheromone --
+    Pheromone:
+      type: object
+      required: [id, trail, type, emitted_at, last_reinforced_at, initial_intensity, decay_model, payload, tags, ttl_floor]
+      properties:
+        id:
+          type: string
+          format: uuid
+        trail:
+          type: string
+        type:
+          type: string
+        emitted_at:
+          type: integer
+          description: Unix milliseconds
+        last_reinforced_at:
+          type: integer
+        initial_intensity:
+          type: number
+          minimum: 0
+          maximum: 1
+        decay_model:
+          $ref: "#/components/schemas/DecayModel"
+        payload:
+          type: object
+        source_agent:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        ttl_floor:
+          type: number
+          minimum: 0
+
+    PheromoneSnapshot:
+      type: object
+      required: [id, trail, type, current_intensity, payload, age_ms, tags]
+      properties:
+        id:
+          type: string
+        trail:
+          type: string
+        type:
+          type: string
+        current_intensity:
+          type: number
+        payload:
+          type: object
+        age_ms:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+
+    # -- Tag Filter --
+    TagFilter:
+      type: object
+      properties:
+        any:
+          type: array
+          items:
+            type: string
+        all:
+          type: array
+          items:
+            type: string
+        none:
+          type: array
+          items:
+            type: string
+
+    # -- Scent Conditions --
+    ScentCondition:
+      oneOf:
+        - $ref: "#/components/schemas/ThresholdCondition"
+        - $ref: "#/components/schemas/CompositeCondition"
+        - $ref: "#/components/schemas/RateCondition"
+        - $ref: "#/components/schemas/PatternCondition"
+      discriminator:
+        propertyName: type
+
+    ThresholdCondition:
+      type: object
+      required: [type, trail, signal_type, aggregation, operator, value]
+      properties:
+        type:
+          type: string
+          const: threshold
+        trail:
+          type: string
+        signal_type:
+          type: string
+        tags:
+          $ref: "#/components/schemas/TagFilter"
+        aggregation:
+          type: string
+          enum: [sum, max, avg, count, any]
+        operator:
+          type: string
+          enum: [">=", ">", "<=", "<", "==", "!="]
+        value:
+          type: number
+
+    CompositeCondition:
+      type: object
+      required: [type, operator, conditions]
+      properties:
+        type:
+          type: string
+          const: composite
+        operator:
+          type: string
+          enum: [and, or, not]
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScentCondition"
+
+    RateCondition:
+      type: object
+      required: [type, trail, signal_type, metric, window_ms, operator, value]
+      properties:
+        type:
+          type: string
+          const: rate
+        trail:
+          type: string
+        signal_type:
+          type: string
+        metric:
+          type: string
+          enum: [emissions_per_second, intensity_delta]
+        window_ms:
+          type: number
+        operator:
+          type: string
+          enum: [">=", ">", "<=", "<"]
+        value:
+          type: number
+
+    PatternCondition:
+      type: object
+      required: [type, sequence, window_ms]
+      properties:
+        type:
+          type: string
+          const: pattern
+        sequence:
+          type: array
+          items:
+            type: object
+            required: [trail, signal_type]
+            properties:
+              trail:
+                type: string
+              signal_type:
+                type: string
+              min_intensity:
+                type: number
+        window_ms:
+          type: number
+        ordered:
+          type: boolean
+          default: true
+
+    # -- Operation Params --
+    EmitParams:
+      type: object
+      required: [trail, type, intensity]
+      properties:
+        trail:
+          type: string
+        type:
+          type: string
+        intensity:
+          type: number
+          minimum: 0
+          maximum: 1
+        decay:
+          $ref: "#/components/schemas/DecayModel"
+        payload:
+          type: object
+        tags:
+          type: array
+          items:
+            type: string
+        merge_strategy:
+          type: string
+          enum: [reinforce, replace, max, add, new]
+          default: reinforce
+        source_agent:
+          type: string
+
+    EmitResult:
+      type: object
+      required: [pheromone_id, action, new_intensity]
+      properties:
+        pheromone_id:
+          type: string
+        action:
+          type: string
+          enum: [created, reinforced, replaced, merged]
+        previous_intensity:
+          type: number
+        new_intensity:
+          type: number
+
+    SniffParams:
+      type: object
+      properties:
+        trails:
+          type: array
+          items:
+            type: string
+        types:
+          type: array
+          items:
+            type: string
+        min_intensity:
+          type: number
+          default: 0
+        max_age_ms:
+          type: number
+        tags:
+          $ref: "#/components/schemas/TagFilter"
+        limit:
+          type: integer
+          default: 100
+        include_evaporated:
+          type: boolean
+          default: false
+
+    SniffResult:
+      type: object
+      required: [timestamp, pheromones, aggregates]
+      properties:
+        timestamp:
+          type: integer
+        pheromones:
+          type: array
+          items:
+            $ref: "#/components/schemas/PheromoneSnapshot"
+        aggregates:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AggregateStats"
+
+    AggregateStats:
+      type: object
+      required: [count, sum_intensity, max_intensity, avg_intensity]
+      properties:
+        count:
+          type: integer
+        sum_intensity:
+          type: number
+        max_intensity:
+          type: number
+        avg_intensity:
+          type: number
+
+    RegisterScentParams:
+      type: object
+      required: [scent_id, agent_endpoint, condition]
+      properties:
+        scent_id:
+          type: string
+        agent_endpoint:
+          type: string
+          format: uri
+        condition:
+          $ref: "#/components/schemas/ScentCondition"
+        cooldown_ms:
+          type: number
+          default: 0
+        activation_payload:
+          type: object
+        trigger_mode:
+          type: string
+          enum: [level, edge_rising, edge_falling]
+          default: level
+        hysteresis:
+          type: number
+          default: 0
+        max_execution_ms:
+          type: number
+          default: 30000
+        context_trails:
+          type: array
+          items:
+            type: string
+
+    RegisterScentResult:
+      type: object
+      required: [scent_id, status, current_condition_state]
+      properties:
+        scent_id:
+          type: string
+        status:
+          type: string
+          enum: [registered, updated]
+        current_condition_state:
+          type: object
+          required: [met]
+          properties:
+            met:
+              type: boolean
+            partial:
+              type: object
+              additionalProperties:
+                type: boolean
+
+    DeregisterScentParams:
+      type: object
+      required: [scent_id]
+      properties:
+        scent_id:
+          type: string
+
+    DeregisterScentResult:
+      type: object
+      required: [scent_id, status]
+      properties:
+        scent_id:
+          type: string
+        status:
+          type: string
+          enum: [deregistered, not_found]
+
+    EvaporateParams:
+      type: object
+      properties:
+        trail:
+          type: string
+        types:
+          type: array
+          items:
+            type: string
+        older_than_ms:
+          type: number
+        below_intensity:
+          type: number
+        tags:
+          $ref: "#/components/schemas/TagFilter"
+
+    EvaporateResult:
+      type: object
+      required: [evaporated_count, trails_affected]
+      properties:
+        evaporated_count:
+          type: integer
+        trails_affected:
+          type: array
+          items:
+            type: string
+
+    InspectParams:
+      type: object
+      properties:
+        include:
+          type: array
+          items:
+            type: string
+            enum: [trails, scents, stats]
+
+    InspectResult:
+      type: object
+      required: [timestamp]
+      properties:
+        timestamp:
+          type: integer
+        trails:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrailInfo"
+        scents:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScentInfo"
+        stats:
+          type: object
+          properties:
+            total_pheromones:
+              type: integer
+            active_pheromones:
+              type: integer
+            total_scents:
+              type: integer
+            uptime_ms:
+              type: number
+
+    TrailInfo:
+      type: object
+      required: [name, pheromone_count, total_intensity, avg_intensity]
+      properties:
+        name:
+          type: string
+        pheromone_count:
+          type: integer
+        total_intensity:
+          type: number
+        avg_intensity:
+          type: number
+
+    ScentInfo:
+      type: object
+      required: [scent_id, agent_endpoint, condition_met, in_cooldown]
+      properties:
+        scent_id:
+          type: string
+        agent_endpoint:
+          type: string
+        condition_met:
+          type: boolean
+        in_cooldown:
+          type: boolean
+        last_triggered_at:
+          oneOf:
+            - type: integer
+            - type: "null"
+
+    # -- Trigger Payload (server→agent) --
+    TriggerPayload:
+      type: object
+      required: [scent_id, triggered_at, condition_snapshot, context_pheromones, activation_payload]
+      properties:
+        scent_id:
+          type: string
+        triggered_at:
+          type: integer
+        condition_snapshot:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              value:
+                type: number
+              pheromone_ids:
+                type: array
+                items:
+                  type: string
+        context_pheromones:
+          type: array
+          items:
+            $ref: "#/components/schemas/PheromoneSnapshot"
+        activation_payload:
+          type: object
+
+security:
+  - ApiKeyAuth: []

@@ -12,6 +12,10 @@ The Stigmergic Blackboard Protocol (SBP) defines a standard for environment-base
 
 SBP enables decoupled, self-organizing multi-agent systems where coordination emerges from environmental state rather than explicit orchestration.
 
+### Conformance Keywords
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119) and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
+
 ---
 
 ## Table of Contents
@@ -66,7 +70,7 @@ SBP applies this biological pattern to digital agents.
 
 ### 2.1 Stale-by-Default
 
-All signals decay. If not reinforced, they evaporate to zero intensity. The environment is self-cleaning.
+All signals MUST decay. If not reinforced, they evaporate to zero intensity. The environment is self-cleaning.
 
 ### 2.2 Sense, Don't Poll
 
@@ -74,7 +78,7 @@ Agents do not actively query the environment. They declare interest patterns, an
 
 ### 2.3 Stateless Agents
 
-Agents are dormant by default. They carry no persistent state between activations. All relevant context is encoded in the environmental signals that triggered them.
+Agents are dormant by default. They SHOULD NOT carry persistent state between activations. All relevant context is encoded in the environmental signals that triggered them.
 
 ### 2.4 Intensity Over Boolean
 
@@ -112,7 +116,7 @@ A pheromone is the fundamental unit of data in SBP.
 ```typescript
 interface Pheromone {
   // Identity
-  id: string;                    // Unique identifier (UUID v7 recommended)
+  id: string;                    // Unique identifier (UUID v7 RECOMMENDED)
   trail: string;                 // Namespaced category (e.g., "market.signals")
   type: string;                  // Signal type within trail (e.g., "volatility")
 
@@ -121,16 +125,16 @@ interface Pheromone {
   last_reinforced_at: number;    // Last reinforcement timestamp
 
   // Intensity & Decay
-  initial_intensity: number;     // Starting intensity (0.0 - 1.0 normalized)
+  initial_intensity: number;     // Starting intensity (MUST be 0.0 - 1.0 normalized)
   current_intensity: number;     // Computed current intensity after decay
   decay_model: DecayModel;       // How this pheromone decays
 
   // Content
   payload: object;               // Arbitrary JSON payload
-  source_agent: string;          // Emitting agent identifier (optional)
+  source_agent: string;          // Emitting agent identifier (OPTIONAL)
 
   // Metadata
-  tags: string[];                // Optional classification tags
+  tags: string[];                // OPTIONAL classification tags
   ttl_floor: number;             // Minimum intensity before considered "evaporated"
 }
 ```
@@ -144,7 +148,7 @@ type DecayModel =
   | { type: "exponential"; half_life_ms: number }
   | { type: "linear"; rate_per_ms: number }
   | { type: "step"; steps: StepDecay[] }
-  | { type: "immortal" }  // Never decays (use sparingly)
+  | { type: "immortal" }  // Never decays (SHOULD be used sparingly)
 
 interface StepDecay {
   at_ms: number;        // Time offset from emission
@@ -164,7 +168,7 @@ intensity(t) = max(0, initial_intensity - (rate * t))
 
 ### 4.3 Computed Intensity
 
-Current intensity is always computed, never stored. This ensures:
+Current intensity MUST always be computed, never stored. This ensures:
 - No background update processes needed
 - Consistent reads regardless of when computed
 - Trivial horizontal scaling
@@ -219,7 +223,7 @@ interface RetentionPolicy {
 
 ## 5. Protocol Operations
 
-SBP defines a minimal set of operations. All operations are idempotent where possible.
+SBP defines a minimal set of operations. All operations SHOULD be idempotent where possible.
 
 ### 5.1 EMIT
 
@@ -253,7 +257,7 @@ Deposit a new pheromone or reinforce an existing one.
 - `"new"`: Always create new pheromone (no merging)
 
 **Matching for Merge:**
-Pheromones match if `trail + type + payload_hash` are identical.
+Pheromones MUST match if `trail + type + payload_hash` are identical.
 
 **Response:**
 ```json
@@ -461,7 +465,7 @@ Remove a scent registration.
 
 ### 5.6 EVAPORATE (Administrative)
 
-Force immediate evaporation of pheromones matching criteria. Typically used for cleanup or emergency reset.
+Force immediate evaporation of pheromones matching criteria. This operation SHOULD be restricted to administrative agents.
 
 **Request:**
 ```json
@@ -500,18 +504,18 @@ All timestamps use Unix milliseconds (UTC). Implementations SHOULD use monotonic
 
 ### 6.2 Reinforcement
 
-When a pheromone is reinforced:
-1. `last_reinforced_at` updates to current time
-2. `initial_intensity` updates to new intensity
-3. Decay timer resets
+When a pheromone is reinforced, the implementation MUST:
+1. Update `last_reinforced_at` to the current time
+2. Update `initial_intensity` to the new intensity
+3. Reset the decay timer
 
 This models biological pheromone behavior where repeated deposits strengthen a trail.
 
 ### 6.3 Evaporation Threshold
 
-When `current_intensity` falls below the trail's `evaporation_threshold`, the pheromone is considered evaporated. Evaporated pheromones:
-- Are excluded from SNIFF results (unless `include_evaporated: true`)
-- Do not contribute to threshold conditions
+When `current_intensity` falls below the trail's `evaporation_threshold`, the pheromone MUST be considered evaporated. Evaporated pheromones:
+- MUST be excluded from SNIFF results (unless `include_evaporated: true`)
+- MUST NOT contribute to threshold conditions
 - MAY be garbage collected or archived per retention policy
 
 ### 6.4 Recommended Defaults
@@ -536,9 +540,9 @@ The blackboard continuously evaluates registered scent conditions. Evaluation SH
 
 ### 7.2 Cooldown
 
-After triggering, a scent enters cooldown for `cooldown_ms`. During cooldown:
-- The scent is not evaluated
-- Additional triggers are suppressed
+After triggering, a scent MUST enter cooldown for `cooldown_ms`. During cooldown:
+- The scent MUST NOT be evaluated
+- Additional triggers MUST be suppressed
 
 This prevents trigger storms from rapidly fluctuating signals.
 
@@ -554,7 +558,7 @@ This prevents trigger storms from rapidly fluctuating signals.
 
 ### 7.4 Edge vs Level Triggering
 
-SBP uses **level triggering** by default: triggers fire when conditions become true. Combined with cooldown, this provides predictable behavior.
+SBP MUST use **level triggering** by default: triggers fire when conditions become true. Combined with cooldown, this provides predictable behavior.
 
 Optional edge-triggering mode:
 ```json
@@ -570,7 +574,7 @@ Optional edge-triggering mode:
 
 ### 8.1 Dormant by Default
 
-Agents have no persistent running state. They exist as:
+Agents SHOULD have no persistent running state. They exist as:
 - A registered scent (condition + endpoint)
 - Handler code waiting for invocation
 
@@ -618,9 +622,9 @@ Agents SHOULD NOT:
 
 ### 8.4 Activation Timeout
 
-Triggers include `max_execution_ms`. If an agent exceeds this, the blackboard:
-- Marks the activation as timed out
-- Optionally emits a `system.errors/agent_timeout` pheromone
+Triggers SHOULD include `max_execution_ms`. If an agent exceeds this, the blackboard:
+- MUST mark the activation as timed out
+- MAY emit a `system.errors/agent_timeout` pheromone
 
 ---
 
@@ -805,7 +809,7 @@ While Streamable HTTP is the standard transport, implementations MAY also suppor
 - **stdio**: For subprocess-based communication (like MCP)
 - **Unix Domain Socket**: For local same-machine communication
 
-Custom transports MUST preserve JSON-RPC message format and protocol semantics
+Custom transports MUST preserve JSON-RPC message format and protocol semantics.
 
 ---
 
@@ -813,7 +817,7 @@ Custom transports MUST preserve JSON-RPC message format and protocol semantics
 
 ### 10.1 Trail Names
 
-Trail names follow reverse-domain notation:
+Trail names SHOULD follow reverse-domain notation:
 ```
 <domain>.<category>[.<subcategory>...]
 
@@ -860,7 +864,7 @@ Implementations SHOULD support:
 
 ### 11.2 Authorization
 
-Fine-grained permissions on:
+Implementations SHOULD support fine-grained permissions on:
 - Trails (read/write per trail)
 - Operations (emit/sniff/register)
 - Intensity limits (prevent signal flooding)
@@ -883,12 +887,12 @@ Example permission structure:
 ### 11.3 Payload Security
 
 - Payloads MUST NOT contain secrets
-- Sensitive data should be references (IDs) not values
+- Sensitive data SHOULD be references (IDs) not values
 - Implementations MAY encrypt payloads at rest
 
 ### 11.4 Denial of Service
 
-Protections against:
+Implementations MUST protect against:
 - Signal flooding (rate limits)
 - Intensity bombing (max intensity caps)
 - Scent explosion (max registrations per agent)
