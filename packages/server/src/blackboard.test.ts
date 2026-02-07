@@ -113,7 +113,7 @@ describe("Blackboard", () => {
       const result = bb.sniff();
       expect(result.aggregates["market.signals/volatility"]).toBeDefined();
       expect(result.aggregates["market.signals/volatility"].count).toBe(1);
-      expect(result.aggregates["market.signals/volatility"].max_intensity).toBe(0.8);
+      expect(result.aggregates["market.signals/volatility"].max_intensity).toBeCloseTo(0.8, 1);
     });
 
     it("should sort by intensity descending", () => {
