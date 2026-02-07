@@ -75,21 +75,21 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
-      - name: Publish @sbp/types
+      - name: Publish @advicenxt/sbp-types
         run: |
           cd packages/types
           npx tsc
           npm publish --access public --provenance || true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @sbp/server
+      - name: Publish @advicenxt/sbp-server
         run: |
           cd packages/server
           npm run build
           npm publish --access public --provenance || true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @sbp/client
+      - name: Publish @advicenxt/sbp-client
         run: |
           cd packages/client-ts
           npm run build

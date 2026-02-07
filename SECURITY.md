@@ -48,5 +48,5 @@ When deploying an SBP server in production:
 This security policy applies to:
 
 - The SBP protocol specification
-- The reference server implementation (`@sbp/server`)
-- The official client SDKs (`@sbp/client`, `sbp-client`)
+- The reference server implementation (`@advicenxt/sbp-server`)
+- The official client SDKs (`@advicenxt/sbp-client`, `sbp-client`)

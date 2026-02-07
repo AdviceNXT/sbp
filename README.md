@@ -154,9 +154,9 @@ with SbpClient(local=True) as client:
 
 | Package | Description |
 |---------|-------------|
-| [`@sbp/server`](packages/server) | TypeScript reference server |
-| [`@sbp/types`](packages/types) | Canonical shared type definitions |
-| [`@sbp/client`](packages/client-ts) | TypeScript/JavaScript client SDK |
+| [`@advicenxt/sbp-server`](packages/server) | TypeScript reference server |
+| [`@advicenxt/sbp-types`](packages/types) | Canonical shared type definitions |
+| [`@advicenxt/sbp-client`](packages/client-ts) | TypeScript/JavaScript client SDK |
 | [`sbp-client`](packages/client-python) | Python client SDK |
 
 ---
@@ -214,7 +214,7 @@ sbp/
 │   ├── server/                   # TypeScript server
 │   │   ├── src/                  # Core implementation
 │   │   └── benchmarks/           # Performance benchmarks
-│   ├── types/                    # Shared @sbp/types
+│   ├── types/                    # Shared @advicenxt/sbp-types
 │   ├── client-ts/                # TypeScript client
 │   └── client-python/            # Python client
 └── examples/                     # Working examples

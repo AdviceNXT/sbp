@@ -9,8 +9,8 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "dev": "npm run dev --workspace=@sbp/server",
-    "start": "npm run start --workspace=@sbp/server"
+    "dev": "npm run dev --workspace=@advicenxt/sbp-server",
+    "start": "npm run start --workspace=@advicenxt/sbp-server"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

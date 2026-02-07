@@ -1,4 +1,4 @@
-# @sbp/types
+# @advicenxt/sbp-types
 
 Canonical type definitions for the **Stigmergic Blackboard Protocol (SBP)** v0.1.
 
@@ -7,7 +7,7 @@ This package provides the shared type interfaces used across all SBP implementat
 ## Installation
 
 ```bash
-npm install @sbp/types
+npm install @advicenxt/sbp-types
 ```
 
 ## Usage
@@ -19,7 +19,7 @@ import type {
   ScentCondition,
   EmitParams,
   SniffResult
-} from "@sbp/types";
+} from "@advicenxt/sbp-types";
 ```
 
 ## What's Included

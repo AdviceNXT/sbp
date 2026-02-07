@@ -1,9 +1,9 @@
 /**
- * @sbp/types — Canonical Type Definitions
+ * @advicenxt/sbp-types — Canonical Type Definitions
  * Stigmergic Blackboard Protocol v0.1
  *
  * This package is the single source of truth for SBP types.
- * Used by @sbp/server, @sbp/client-ts, and third-party implementations.
+ * Used by @advicenxt/sbp-server, @advicenxt/sbp-client, and third-party implementations.
  */
 
 // ============================================================================

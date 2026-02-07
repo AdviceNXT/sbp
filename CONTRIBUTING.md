@@ -32,8 +32,8 @@ pytest
 ```
 sbp/
 ├── packages/
-│   ├── server/          # @sbp/server - TypeScript server
-│   ├── client-ts/       # @sbp/client - TypeScript client
+│   ├── server/          # @advicenxt/sbp-server - TypeScript server
+│   ├── client-ts/       # @advicenxt/sbp-client - TypeScript client
 │   └── client-python/   # sbp-client - Python client
 ├── schemas/             # JSON Schema
 └── SPECIFICATION.md     # Protocol specification

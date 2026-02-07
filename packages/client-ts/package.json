@@ -1,5 +1,5 @@
 {
-  "name": "@sbp/client",
+  "name": "@advicenxt/sbp-client",
   "version": "0.1.0",
   "description": "Stigmergic Blackboard Protocol - TypeScript/JavaScript Client",
   "type": "module",

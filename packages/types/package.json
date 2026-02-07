@@ -1,5 +1,5 @@
 {
-    "name": "@sbp/types",
+    "name": "@advicenxt/sbp-types",
     "version": "0.1.0",
     "description": "Canonical type definitions for the Stigmergic Blackboard Protocol (SBP)",
     "type": "module",

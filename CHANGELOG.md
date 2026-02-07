@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persistence adapter interface (`PheromoneStore`) with pluggable storage backends
 - `MemoryStore` — default in-memory implementation of `PheromoneStore`
 - `createStore()` factory function for instantiating stores
-- `@sbp/types` package — canonical shared type definitions
+- `@advicenxt/sbp-types` package — canonical shared type definitions
 - OpenAPI 3.1 specification (`schemas/openapi.yaml`)
 - Benchmark suite (`packages/server/benchmarks/bench.ts`)
 - Governance RFC process (`docs/rfc-process.md`) and template (`rfcs/0000-template.md`)

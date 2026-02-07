@@ -1,5 +1,5 @@
 {
-  "name": "@sbp/server",
+  "name": "@advicenxt/sbp-server",
   "version": "0.1.0",
   "description": "Stigmergic Blackboard Protocol - Server Implementation",
   "type": "module",
