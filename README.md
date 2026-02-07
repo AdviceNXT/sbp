@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Spec Version](https://img.shields.io/badge/spec-v0.1.0-green.svg)](SPECIFICATION.md)
+[![CI](https://github.com/advicenxt/sbp/actions/workflows/ci.yml/badge.svg)](https://github.com/advicenxt/sbp/actions/workflows/ci.yml)
 
 **A coordination protocol for AI agents that work together without talking to each other.**
 

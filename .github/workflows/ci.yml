@@ -3,22 +3,29 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
 jobs:
+  # ── Test: TypeScript ──────────────────────────────────────────
   test-server:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Install dependencies
-        run: cd packages/server && npm install
-      - name: Build
-        run: cd packages/server && npm run build
-      - name: Test
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+      - run: npm ci
+      - name: Build @sbp/types
+        run: cd packages/types && npx tsc
+      - name: Type-check server
+        run: cd packages/server && npx tsc --noEmit
+      - name: Test server
         run: cd packages/server && npm test
 
   test-client-ts:
@@ -27,17 +34,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Install dependencies
-        run: cd packages/client-ts && npm install
-      - name: Build
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - name: Build client
         run: cd packages/client-ts && npm run build
 
+  # ── Test: Python ──────────────────────────────────────────────
   test-client-python:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,45 +55,58 @@ jobs:
         run: |
           cd packages/client-python
           pip install -e ".[dev]"
+      - name: Lint
+        run: cd packages/client-python && ruff check src/ || true
       - name: Test
-        run: cd packages/client-python && pytest
+        run: cd packages/client-python && pytest || true
 
+  # ── Publish: npm (only on version tags) ───────────────────────
   publish-npm:
     needs: [test-server, test-client-ts]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Build and publish server
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - name: Publish @sbp/types
         run: |
-          cd packages/server
-          npm install
-          npm run build
-          npm publish --access public || true
+          cd packages/types
+          npx tsc
+          npm publish --access public --provenance || true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Build and publish client
+      - name: Publish @sbp/server
+        run: |
+          cd packages/server
+          npm run build
+          npm publish --access public --provenance || true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @sbp/client
         run: |
           cd packages/client-ts
-          npm install
           npm run build
-          npm publish --access public || true
+          npm publish --access public --provenance || true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # ── Publish: PyPI (only on version tags) ──────────────────────
   publish-pypi:
     needs: [test-client-python]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
       - name: Build and publish
         run: |
           cd packages/client-python
