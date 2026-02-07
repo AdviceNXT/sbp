@@ -1,0 +1,21 @@
+{
+  "name": "sbp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stigmergic Blackboard Protocol - Monorepo",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "dev": "npm run dev --workspace=@sbp/server",
+    "start": "npm run start --workspace=@sbp/server"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

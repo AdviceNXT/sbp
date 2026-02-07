@@ -1,0 +1,258 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sbp.spec/schemas/v0.1/sbp.json",
+  "title": "Stigmergic Blackboard Protocol Schema",
+  "version": "0.1.0",
+
+  "definitions": {
+    "DecayModel": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "exponential" },
+            "half_life_ms": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["type", "half_life_ms"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "linear" },
+            "rate_per_ms": { "type": "number", "minimum": 0 }
+          },
+          "required": ["type", "rate_per_ms"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "step" },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "at_ms": { "type": "integer", "minimum": 0 },
+                  "intensity": { "type": "number", "minimum": 0, "maximum": 1 }
+                },
+                "required": ["at_ms", "intensity"]
+              },
+              "minItems": 1
+            }
+          },
+          "required": ["type", "steps"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "immortal" }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "Pheromone": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "trail": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "emitted_at": { "type": "integer" },
+        "last_reinforced_at": { "type": "integer" },
+        "initial_intensity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "current_intensity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "decay_model": { "$ref": "#/definitions/DecayModel" },
+        "payload": { "type": "object" },
+        "source_agent": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "ttl_floor": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.01 }
+      },
+      "required": ["id", "trail", "type", "emitted_at", "initial_intensity", "decay_model"]
+    },
+
+    "TagFilter": {
+      "type": "object",
+      "properties": {
+        "any": { "type": "array", "items": { "type": "string" } },
+        "all": { "type": "array", "items": { "type": "string" } },
+        "none": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "ThresholdCondition": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "threshold" },
+        "trail": { "type": "string" },
+        "signal_type": { "type": "string" },
+        "tags": { "$ref": "#/definitions/TagFilter" },
+        "aggregation": { "enum": ["sum", "max", "avg", "count", "any"] },
+        "operator": { "enum": [">=", ">", "<=", "<", "==", "!="] },
+        "value": { "type": "number" }
+      },
+      "required": ["type", "trail", "signal_type", "aggregation", "operator", "value"]
+    },
+
+    "CompositeCondition": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "composite" },
+        "operator": { "enum": ["and", "or", "not"] },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ScentCondition" },
+          "minItems": 1
+        }
+      },
+      "required": ["type", "operator", "conditions"]
+    },
+
+    "RateCondition": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "rate" },
+        "trail": { "type": "string" },
+        "signal_type": { "type": "string" },
+        "metric": { "enum": ["emissions_per_second", "intensity_delta"] },
+        "window_ms": { "type": "integer", "minimum": 1 },
+        "operator": { "enum": [">=", ">", "<=", "<"] },
+        "value": { "type": "number" }
+      },
+      "required": ["type", "trail", "signal_type", "metric", "window_ms", "operator", "value"]
+    },
+
+    "PatternCondition": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "pattern" },
+        "sequence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "trail": { "type": "string" },
+              "signal_type": { "type": "string" },
+              "min_intensity": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "required": ["trail", "signal_type"]
+          },
+          "minItems": 2
+        },
+        "within_ms": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["type", "sequence", "within_ms"]
+    },
+
+    "ScentCondition": {
+      "oneOf": [
+        { "$ref": "#/definitions/ThresholdCondition" },
+        { "$ref": "#/definitions/CompositeCondition" },
+        { "$ref": "#/definitions/RateCondition" },
+        { "$ref": "#/definitions/PatternCondition" }
+      ]
+    },
+
+    "MergeStrategy": {
+      "enum": ["reinforce", "replace", "max", "add", "new"]
+    }
+  },
+
+  "properties": {
+    "emit": {
+      "type": "object",
+      "description": "EMIT operation - deposit or reinforce a pheromone",
+      "properties": {
+        "trail": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "intensity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "decay": { "$ref": "#/definitions/DecayModel" },
+        "payload": { "type": "object" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "merge_strategy": { "$ref": "#/definitions/MergeStrategy", "default": "reinforce" }
+      },
+      "required": ["trail", "type", "intensity"]
+    },
+
+    "sniff": {
+      "type": "object",
+      "description": "SNIFF operation - sense current environmental state",
+      "properties": {
+        "trails": { "type": "array", "items": { "type": "string" } },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "min_intensity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+        "tags": { "$ref": "#/definitions/TagFilter" },
+        "limit": { "type": "integer", "minimum": 1, "default": 100 },
+        "include_evaporated": { "type": "boolean", "default": false }
+      }
+    },
+
+    "register_scent": {
+      "type": "object",
+      "description": "REGISTER_SCENT operation - declare trigger condition",
+      "properties": {
+        "scent_id": { "type": "string" },
+        "agent_endpoint": { "type": "string", "format": "uri" },
+        "condition": { "$ref": "#/definitions/ScentCondition" },
+        "cooldown_ms": { "type": "integer", "minimum": 0, "default": 0 },
+        "activation_payload": { "type": "object" },
+        "trigger_mode": { "enum": ["level", "edge_rising", "edge_falling"], "default": "level" },
+        "hysteresis": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_execution_ms": { "type": "integer", "minimum": 1, "default": 30000 }
+      },
+      "required": ["scent_id", "agent_endpoint", "condition"]
+    },
+
+    "trigger": {
+      "type": "object",
+      "description": "TRIGGER message - blackboard to agent activation",
+      "properties": {
+        "scent_id": { "type": "string" },
+        "triggered_at": { "type": "integer" },
+        "condition_snapshot": { "type": "object" },
+        "context_pheromones": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Pheromone" }
+        },
+        "activation_payload": { "type": "object" }
+      },
+      "required": ["scent_id", "triggered_at", "condition_snapshot"]
+    },
+
+    "deregister_scent": {
+      "type": "object",
+      "description": "DEREGISTER_SCENT operation - remove trigger condition",
+      "properties": {
+        "scent_id": { "type": "string" }
+      },
+      "required": ["scent_id"]
+    },
+
+    "evaporate": {
+      "type": "object",
+      "description": "EVAPORATE operation - force cleanup of pheromones",
+      "properties": {
+        "trail": { "type": "string" },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "older_than_ms": { "type": "integer", "minimum": 0 },
+        "below_intensity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "tags": { "$ref": "#/definitions/TagFilter" }
+      }
+    },
+
+    "inspect": {
+      "type": "object",
+      "description": "INSPECT operation - get blackboard metadata",
+      "properties": {
+        "include": {
+          "type": "array",
+          "items": { "enum": ["trails", "scents", "stats", "agents"] }
+        }
+      }
+    }
+  }
+}

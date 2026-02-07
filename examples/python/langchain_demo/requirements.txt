@@ -1,0 +1,6 @@
+langchain==0.1.20
+langchain-openai==0.1.7
+langchain-core==0.1.52
+python-dotenv
+# Install sbp-client from local package:
+# pip install -e ../../../packages/client-python

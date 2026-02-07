@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+dist/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build outputs
+build/
+*.pyc
+*.pyo
+*.so
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+htmlcov/
+.coverage
+
+# Package locks (keep package-lock.json for npm)
+# poetry.lock
