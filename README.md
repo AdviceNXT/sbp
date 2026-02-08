@@ -86,6 +86,27 @@ Worker agents pull tasks via MCP tools and emit completion pheromones. An aggreg
 
 ---
 
+## Installation
+
+### Node.js
+
+```bash
+# Server
+npm install @advicenxt/sbp-server
+
+# Client
+npm install @advicenxt/sbp-client
+
+# Types (Shared definitions)
+npm install @advicenxt/sbp-types
+```
+
+### Python
+
+```bash
+pip install sbp-client
+```
+
 ## Quick Start
 
 ### Start the Server
