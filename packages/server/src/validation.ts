@@ -93,6 +93,15 @@ const PatternConditionSchema = z.object({
   ordered: z.boolean().optional(),
 });
 
+const TraceConditionSchema = z.object({
+  type: z.literal("trace"),
+  trail: z.string().min(1),
+  key: z.string().min(1),
+  operator: z.enum(["exists", "not_exists", "value_eq", "value_neq"]),
+  field: z.string().optional(),
+  expected: z.unknown().optional(),
+});
+
 // Recursive condition schema using z.lazy for composite self-reference
 const ScentConditionSchema: z.ZodType = z.lazy(() =>
   z.union([
@@ -104,6 +113,7 @@ const ScentConditionSchema: z.ZodType = z.lazy(() =>
     }),
     RateConditionSchema,
     PatternConditionSchema,
+    TraceConditionSchema,
   ])
 );
 
@@ -157,7 +167,34 @@ export const EvaporateParamsSchema = z.object({
 });
 
 export const InspectParamsSchema = z.object({
-  include: z.array(z.enum(["trails", "scents", "stats"])).optional(),
+  include: z.array(z.enum(["trails", "scents", "stats", "traces"])).optional(),
+});
+
+// ============================================================================
+// TRACE OPERATION SCHEMAS
+// ============================================================================
+
+export const InscribeParamsSchema = z.object({
+  trail: z.string().min(1, "Trail must be a non-empty string"),
+  key: z.string().min(1, "Key must be a non-empty string"),
+  value: z.record(z.unknown()),
+  tags: z.array(z.string()).optional(),
+  source_agent: z.string().optional(),
+});
+
+export const ReadParamsSchema = z.object({
+  trails: z.array(z.string()).optional(),
+  keys: z.array(z.string()).optional(),
+  tags: TagFilterSchema.optional(),
+  prefix: z.string().optional(),
+  limit: z.number().int().positive().max(10000).optional(),
+});
+
+export const EraseParamsSchema = z.object({
+  trail: z.string().optional(),
+  keys: z.array(z.string()).optional(),
+  tags: TagFilterSchema.optional(),
+  older_than_ms: z.number().positive().optional(),
 });
 
 export const SubscribeParamsSchema = z.object({
@@ -193,6 +230,9 @@ const METHOD_SCHEMAS: Record<string, z.ZodType> = {
   "sbp/inspect": InspectParamsSchema,
   "sbp/subscribe": SubscribeParamsSchema,
   "sbp/unsubscribe": UnsubscribeParamsSchema,
+  "sbp/inscribe": InscribeParamsSchema,
+  "sbp/read": ReadParamsSchema,
+  "sbp/erase": EraseParamsSchema,
 };
 
 export interface ValidationError {

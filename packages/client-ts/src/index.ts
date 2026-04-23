@@ -58,7 +58,44 @@ export interface RateCondition {
   value: number;
 }
 
-export type ScentCondition = ThresholdCondition | CompositeCondition | RateCondition;
+export type ScentCondition = ThresholdCondition | CompositeCondition | RateCondition | TraceCondition;
+
+export interface TraceCondition {
+  type: "trace";
+  trail: string;
+  key: string;
+  operator: "exists" | "not_exists" | "value_eq" | "value_neq";
+  field?: string;
+  expected?: unknown;
+}
+
+export interface Trace {
+  id: string;
+  trail: string;
+  key: string;
+  value: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+  version: number;
+  source_agent?: string;
+  tags: string[];
+}
+
+export interface InscribeResult {
+  trace_id: string;
+  action: "created" | "updated";
+  version: number;
+}
+
+export interface ReadResult {
+  timestamp: number;
+  traces: Trace[];
+}
+
+export interface EraseResult {
+  erased_count: number;
+  trails_affected: string[];
+}
 
 export interface EmitResult {
   pheromone_id: string;
@@ -141,6 +178,23 @@ export function not(condition: ScentCondition): CompositeCondition {
   return { type: "composite", operator: "not", conditions: [condition] };
 }
 
+export function traceExists(trail: string, key: string = "*"): TraceCondition {
+  return { type: "trace", trail, key, operator: "exists" };
+}
+
+export function traceNotExists(trail: string, key: string = "*"): TraceCondition {
+  return { type: "trace", trail, key, operator: "not_exists" };
+}
+
+export function traceEquals(
+  trail: string,
+  key: string,
+  field: string,
+  expected: unknown
+): TraceCondition {
+  return { type: "trace", trail, key, operator: "value_eq", field, expected };
+}
+
 // ============================================================================
 // CLIENT
 // ============================================================================
@@ -156,6 +210,10 @@ export interface EmitOptions {
   payload?: Record<string, unknown>;
   tags?: string[];
   mergeStrategy?: "reinforce" | "replace" | "max" | "add" | "new";
+}
+
+export interface InscribeOptions {
+  tags?: string[];
 }
 
 export interface SniffOptions {
@@ -303,7 +361,52 @@ export class SbpClient {
   // ==========================================================================
 
   async inspect(include?: string[]): Promise<Record<string, unknown>> {
-    return this.rpc("sbp/inspect", { include: include ?? ["trails", "scents", "stats"] });
+    return this.rpc("sbp/inspect", { include: include ?? ["trails", "scents", "stats", "traces"] });
+  }
+
+  // ==========================================================================
+  // TRACE OPERATIONS
+  // ==========================================================================
+
+  async inscribe(
+    trail: string,
+    key: string,
+    value: Record<string, unknown>,
+    options: InscribeOptions = {}
+  ): Promise<InscribeResult> {
+    return this.rpc<InscribeResult>("sbp/inscribe", {
+      trail,
+      key,
+      value,
+      tags: options.tags,
+      source_agent: this.agentId,
+    });
+  }
+
+  async read(options: {
+    trails?: string[];
+    keys?: string[];
+    prefix?: string;
+    limit?: number;
+  } = {}): Promise<ReadResult> {
+    return this.rpc<ReadResult>("sbp/read", {
+      trails: options.trails,
+      keys: options.keys,
+      prefix: options.prefix,
+      limit: options.limit ?? 100,
+    });
+  }
+
+  async erase(options: {
+    trail?: string;
+    keys?: string[];
+    olderThanMs?: number;
+  } = {}): Promise<EraseResult> {
+    return this.rpc<EraseResult>("sbp/erase", {
+      trail: options.trail,
+      keys: options.keys,
+      older_than_ms: options.olderThanMs,
+    });
   }
 
   // ==========================================================================
@@ -502,6 +605,23 @@ export class SbpAgent {
 
   async sniff(options?: SniffOptions): Promise<SniffResult> {
     return this.client.sniff(options);
+  }
+
+  async inscribe(
+    trail: string,
+    key: string,
+    value: Record<string, unknown>,
+    options?: InscribeOptions
+  ): Promise<InscribeResult> {
+    return this.client.inscribe(trail, key, value, options);
+  }
+
+  async read(options?: Parameters<SbpClient["read"]>[0]): Promise<ReadResult> {
+    return this.client.read(options);
+  }
+
+  async erase(options?: Parameters<SbpClient["erase"]>[0]): Promise<EraseResult> {
+    return this.client.erase(options);
   }
 
   async run(): Promise<void> {

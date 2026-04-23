@@ -16,7 +16,11 @@ from sbp.types import (
     RegisterScentParams, RegisterScentResult,
     DeregisterScentResult,
     EvaporateParams, EvaporateResult,
-    InspectResult, TriggerPayload, TagFilter
+    InspectResult, TriggerPayload, TagFilter,
+    Trace, InscribeParams, InscribeResult,
+    ReadParams, ReadResult,
+    EraseParams, EraseResult,
+    TRACE_MAX_VALUE_SIZE,
 )
 from sbp.decay import compute_intensity, is_evaporated
 from sbp.evaluator import evaluate_condition, EvaluationContext, match_tags
@@ -29,6 +33,10 @@ class LocalBlackboard:
         self.emission_history: List[Dict[str, Any]] = []
         self.start_time = int(time.time() * 1000)
 
+        # Trace storage: composite key "trail\0key" -> Trace
+        self.traces: Dict[str, Trace] = {}
+        self.traces_by_id: Dict[str, str] = {}  # id -> composite key
+
         # Options
         self.emission_history_window = 60000
         self.default_ttl_floor = 0.01
@@ -36,6 +44,9 @@ class LocalBlackboard:
         # Background task
         self._running = False
         self._task = None
+
+    def _trace_key(self, trail: str, key: str) -> str:
+        return f"{trail}\0{key}"
 
     async def start(self):
         if self._running:
@@ -220,7 +231,10 @@ class LocalBlackboard:
         self.scents[params.scent_id] = scent
 
         # Evaluate immediately to return state
-        ctx = EvaluationContext(list(self.pheromones.values()), now, self.emission_history)
+        ctx = EvaluationContext(
+            list(self.pheromones.values()), now, self.emission_history,
+            traces=list(self.traces.values())
+        )
         result = evaluate_condition(params.condition, ctx)
 
         return RegisterScentResult(
@@ -247,7 +261,10 @@ class LocalBlackboard:
     async def evaluate_scents(self):
         now = self._now()
         pheromones = list(self.pheromones.values())
-        ctx = EvaluationContext(pheromones, now, self.emission_history)
+        ctx = EvaluationContext(
+            pheromones, now, self.emission_history,
+            traces=list(self.traces.values())
+        )
 
         for scent in self.scents.values():
             # Cooldown check
@@ -324,6 +341,122 @@ class LocalBlackboard:
     def _prune_history(self, now: int):
         cutoff = now - self.emission_history_window
         self.emission_history = [e for e in self.emission_history if e["timestamp"] >= cutoff]
+
+    # =========================================================================
+    # TRACE OPERATIONS — Durable Knowledge Layer
+    # =========================================================================
+
+    def inscribe(self, params: dict | InscribeParams) -> InscribeResult:
+        """Inscribe a trace — create or update a durable knowledge record."""
+        now = self._now()
+
+        # Accept both dict and InscribeParams
+        if isinstance(params, dict):
+            trail = params["trail"]
+            key = params["key"]
+            value = params["value"]
+            tags = params.get("tags", [])
+            source_agent = params.get("source_agent")
+        else:
+            trail = params.trail
+            key = params.key
+            value = params.value
+            tags = params.tags
+            source_agent = params.source_agent
+
+        # Size check
+        serialized = json.dumps(value)
+        if len(serialized) > TRACE_MAX_VALUE_SIZE:
+            raise ValueError(
+                f"Trace value exceeds maximum size ({len(serialized)} > {TRACE_MAX_VALUE_SIZE} bytes)"
+            )
+
+        ck = self._trace_key(trail, key)
+        existing = self.traces.get(ck)
+
+        if existing:
+            existing.value = value
+            existing.updated_at = now
+            existing.version += 1
+            existing.tags = tags
+            if source_agent:
+                existing.source_agent = source_agent
+            return InscribeResult(
+                trace_id=existing.id,
+                action="updated",
+                version=existing.version,
+            )
+
+        trace_id = str(uuid.uuid4())
+        trace = Trace(
+            id=trace_id,
+            trail=trail,
+            key=key,
+            value=value,
+            created_at=now,
+            updated_at=now,
+            version=1,
+            source_agent=source_agent,
+            tags=tags,
+        )
+        self.traces[ck] = trace
+        self.traces_by_id[trace_id] = ck
+
+        return InscribeResult(
+            trace_id=trace_id,
+            action="created",
+            version=1,
+        )
+
+    def read(self, params: ReadParams) -> ReadResult:
+        """Read traces from the blackboard."""
+        now = self._now()
+        results: List[Trace] = []
+
+        for t in self.traces.values():
+            if params.trails and t.trail not in params.trails:
+                continue
+            if params.keys and t.key not in params.keys:
+                continue
+            if params.prefix and not t.key.startswith(params.prefix):
+                continue
+            if params.tags and not match_tags(t.tags, params.tags):
+                continue
+            results.append(t)
+
+        results.sort(key=lambda x: x.updated_at, reverse=True)
+
+        return ReadResult(
+            timestamp=now,
+            traces=results[:params.limit],
+        )
+
+    def erase(self, params: EraseParams) -> EraseResult:
+        """Erase traces matching criteria."""
+        now = self._now()
+        to_remove: List[str] = []
+        trails_affected: set[str] = set()
+
+        for ck, t in self.traces.items():
+            if params.trail and t.trail != params.trail:
+                continue
+            if params.keys and t.key not in params.keys:
+                continue
+            if params.older_than_ms is not None and now - t.updated_at < params.older_than_ms:
+                continue
+            if params.tags and not match_tags(t.tags, params.tags):
+                continue
+            to_remove.append(ck)
+            trails_affected.add(t.trail)
+
+        for ck in to_remove:
+            trace = self.traces.pop(ck)
+            self.traces_by_id.pop(trace.id, None)
+
+        return EraseResult(
+            erased_count=len(to_remove),
+            trails_affected=list(trails_affected),
+        )
 
 
 # Singleton instance for shared local mode

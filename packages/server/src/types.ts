@@ -110,7 +110,16 @@ export interface PatternCondition {
   ordered?: boolean;
 }
 
-export type ScentCondition = ThresholdCondition | CompositeCondition | RateCondition | PatternCondition;
+export interface TraceCondition {
+  type: "trace";
+  trail: string;
+  key: string;                   // "*" for any key in trail
+  operator: "exists" | "not_exists" | "value_eq" | "value_neq";
+  field?: string;                // Dot-separated path into trace value (for value_eq/neq)
+  expected?: unknown;            // Expected value for comparison
+}
+
+export type ScentCondition = ThresholdCondition | CompositeCondition | RateCondition | PatternCondition | TraceCondition;
 
 // ============================================================================
 // SCENT REGISTRATION
@@ -229,8 +238,70 @@ export interface EvaporateResult {
   trails_affected: string[];
 }
 
+// ============================================================================
+// TRACES — Durable Knowledge Records
+// ============================================================================
+
+/** Maximum trace value size in bytes (1 MB — supports .md files) */
+export const TRACE_MAX_VALUE_SIZE = 1_048_576;
+
+export interface Trace {
+  id: string;
+  trail: string;
+  key: string;
+  value: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+  version: number;
+  source_agent?: string;
+  tags: string[];
+}
+
+export interface InscribeParams {
+  trail: string;
+  key: string;
+  value: Record<string, unknown>;
+  tags?: string[];
+  source_agent?: string;
+}
+
+export interface InscribeResult {
+  trace_id: string;
+  action: "created" | "updated";
+  version: number;
+}
+
+export interface ReadParams {
+  trails?: string[];
+  keys?: string[];
+  tags?: TagFilter;
+  prefix?: string;
+  limit?: number;
+}
+
+export interface ReadResult {
+  timestamp: number;
+  traces: Trace[];
+}
+
+export interface EraseParams {
+  trail?: string;
+  keys?: string[];
+  tags?: TagFilter;
+  older_than_ms?: number;
+}
+
+export interface EraseResult {
+  erased_count: number;
+  trails_affected: string[];
+}
+
+// ============================================================================
+// INSPECT
+// ============================================================================
+
 export interface InspectParams {
-  include?: Array<"trails" | "scents" | "stats">;
+  include?: Array<"trails" | "scents" | "stats" | "traces">;
 }
 
 export interface TrailInfo {
@@ -248,14 +319,23 @@ export interface ScentInfo {
   last_triggered_at: number | null;
 }
 
+export interface TraceInfo {
+  trail: string;
+  key: string;
+  version: number;
+  updated_at: number;
+}
+
 export interface InspectResult {
   timestamp: number;
   trails?: TrailInfo[];
   scents?: ScentInfo[];
+  traces?: TraceInfo[];
   stats?: {
     total_pheromones: number;
     active_pheromones: number;
     total_scents: number;
+    total_traces: number;
     uptime_ms: number;
   };
 }
@@ -300,6 +380,8 @@ export const SBP_ERROR_CODES = {
   RATE_LIMITED: -32004,
   UNAUTHORIZED: -32005,
   INVALID_CONDITION: -32006,
+  TRACE_NOT_FOUND: -32007,
+  TRACE_TOO_LARGE: -32008,
 } as const;
 
 export class SbpError extends Error {

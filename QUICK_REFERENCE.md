@@ -6,6 +6,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         BLACKBOARD                                  │
 │                                                                     │
+│  🔥 PHEROMONE LAYER (Ephemeral)                                     │
 │   Trail: market.signals                 Trail: market.orders        │
 │   ┌─────────────────────────┐          ┌─────────────────────────┐ │
 │   │ ◉ volatility (0.8)      │          │ ◉ large_order (0.6)     │ │
@@ -13,7 +14,14 @@
 │   │ · trend (0.05)          │ ────→    │ ○ fill (0.3)            │ │
 │   └─────────────────────────┘          └─────────────────────────┘ │
 │                                                                     │
-│   ◉ Strong signal   ○ Weak signal   · Evaporating                  │
+│  🪨 TRACE LAYER (Durable)                                           │
+│   Trail: config                         Trail: knowledge            │
+│   ┌─────────────────────────┐          ┌─────────────────────────┐ │
+│   │ ■ risk-tolerance v2     │          │ ■ client-profile v1     │ │
+│   │ ■ mode v1               │ persist  │ ■ market-thesis v3      │ │
+│   └─────────────────────────┘          └─────────────────────────┘ │
+│                                                                     │
+│   ◉ Strong signal   ○ Weak signal   · Evaporating   ■ Trace        │
 └─────────────────────────────────────────────────────────────────────┘
                 │                              │
                 └──────────────┬───────────────┘
@@ -22,7 +30,8 @@
                     │  SCENT EVALUATOR    │
                     │                     │
                     │  IF volatility ≥0.7 │
-                    │  AND orders ≥ 2     │
+                    │  AND risk-config    │
+                    │    EXISTS           │
                     │  THEN trigger       │
                     └──────────┬──────────┘
                                │
@@ -32,20 +41,23 @@
                     │                     │
                     │  → Wake            │
                     │  → Process          │
-                    │  → Emit             │
+                    │  → Emit / Inscribe  │
                     │  → Sleep           │
                     └─────────────────────┘
 ```
 
-## Five Core Operations
+## Eight Core Operations
 
-| Operation | Direction | Purpose |
-|-----------|-----------|---------|
-| `EMIT` | Agent → Blackboard | Deposit or reinforce a pheromone |
-| `SNIFF` | Agent → Blackboard | Read current environmental state |
-| `REGISTER_SCENT` | Agent → Blackboard | Declare trigger condition |
-| `TRIGGER` | Blackboard → Agent | Activate dormant agent |
-| `DEREGISTER_SCENT` | Agent → Blackboard | Remove trigger condition |
+| Operation | Direction | Layer | Purpose |
+|-----------|-----------|-------|---------|
+| `EMIT` | Agent → Blackboard | Pheromone | Deposit or reinforce a pheromone |
+| `SNIFF` | Agent → Blackboard | Pheromone | Read current environmental state |
+| `REGISTER_SCENT` | Agent → Blackboard | Both | Declare trigger condition |
+| `TRIGGER` | Blackboard → Agent | Both | Activate dormant agent |
+| `DEREGISTER_SCENT` | Agent → Blackboard | Both | Remove trigger condition |
+| `INSCRIBE` | Agent → Blackboard | Trace | Create or update a durable trace |
+| `READ` | Agent → Blackboard | Trace | Read traces matching criteria |
+| `ERASE` | Agent → Blackboard | Trace | Remove traces |
 
 ## Pheromone Anatomy
 
@@ -62,6 +74,24 @@
   "last_reinforced_at": 1707350400000
 }
 ```
+
+## Trace Anatomy
+
+```json
+{
+  "id": "t-abc123",
+  "trail": "config",
+  "key": "risk-tolerance",
+  "value": { "level": "moderate", "max_drawdown": 0.15 },
+  "created_at": 1707350300000,
+  "updated_at": 1707350400000,
+  "version": 2,
+  "source_agent": "config-manager",
+  "tags": ["settings"]
+}
+```
+
+**Key difference from pheromones:** No decay model, no intensity. Traces persist until explicitly erased.
 
 ## Decay Models
 
@@ -127,6 +157,18 @@
 }
 ```
 
+**Trace** - Durable knowledge state:
+```json
+{
+  "type": "trace",
+  "trail": "config",
+  "key": "risk-tolerance",
+  "operator": "exists"
+}
+```
+
+Trace operators: `exists`, `not_exists`, `value_eq`, `value_neq`. Use `"key": "*"` for wildcard.
+
 ## Aggregation Functions
 
 | Function | Returns |
@@ -155,6 +197,7 @@
 | Session context | 5 minutes |
 | Task coordination | 30 minutes |
 | Historical markers | 4+ hours |
+| Permanent knowledge | **Use Traces instead** |
 
 ## Common Patterns
 
@@ -168,6 +211,26 @@ await bb.emit("events", "user_action", 0.5, payload={"action": "click"})
 while monitoring:
     await bb.emit("health", "alive", 1.0, merge="reinforce")
     await sleep(10)  # Reinforce every 10s
+```
+
+### Institutional Memory
+```python
+# Store durable knowledge
+await bb.inscribe("config", "risk-tolerance", {"level": "moderate"})
+
+# Read it back anytime
+traces = await bb.read(trails=["config"])
+```
+
+### Cross-Layer Trigger
+```python
+# Trigger when volatility is high AND risk config exists
+agent.on_scent("risk-alert",
+    condition=and_(
+        threshold("market", "volatility", ">=", 0.7),
+        trace_exists("config", "risk-tolerance"),
+    ),
+)
 ```
 
 ### Quorum Detection
@@ -225,6 +288,8 @@ Accept: application/json, text/event-stream
 | -32003 | Payload validation failed |
 | -32004 | Rate limited |
 | -32005 | Unauthorized |
+| -32007 | Trace not found |
+| -32008 | Trace value exceeds maximum size |
 
 ## Comparison with MCP
 
@@ -235,3 +300,5 @@ Accept: application/json, text/event-stream
 | Request-response | Fire-and-forget + sense |
 | Explicit routing | Environmental routing |
 | Stateful sessions | Stateless agents |
+| Persistent memory | Traces (durable) + Pheromones (ephemeral) |
+

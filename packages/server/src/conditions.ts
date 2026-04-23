@@ -10,7 +10,9 @@ import type {
   CompositeCondition,
   RateCondition,
   PatternCondition,
+  TraceCondition,
   TagFilter,
+  Trace,
 } from "./types.js";
 import { computeIntensity, isEvaporated } from "./decay.js";
 
@@ -18,6 +20,7 @@ export interface EvaluationContext {
   pheromones: Pheromone[];
   now: number;
   emissionHistory?: Array<{ trail: string; type: string; timestamp: number }>;
+  traces?: Trace[];
 }
 
 export interface EvaluationResult {
@@ -42,6 +45,8 @@ export function evaluateCondition(
       return evaluateRate(condition, ctx);
     case "pattern":
       return evaluatePattern(condition, ctx);
+    case "trace":
+      return evaluateTrace(condition, ctx);
     default:
       return { met: false, value: 0, matchingPheromoneIds: [] };
   }
@@ -302,4 +307,92 @@ export function createSnapshot(pheromone: Pheromone, now: number): PheromoneSnap
     age_ms: now - pheromone.emitted_at,
     tags: pheromone.tags,
   };
+}
+
+// ============================================================================
+// TRACE CONDITION
+// ============================================================================
+
+/**
+ * Evaluate a trace condition — check durable knowledge state
+ */
+function evaluateTrace(
+  condition: TraceCondition,
+  ctx: EvaluationContext
+): EvaluationResult {
+  const traces = ctx.traces ?? [];
+
+  // Filter matching traces
+  const matching = traces.filter((t) => {
+    if (t.trail !== condition.trail) return false;
+    if (condition.key !== "*" && t.key !== condition.key) return false;
+    return true;
+  });
+
+  switch (condition.operator) {
+    case "exists":
+      return { met: matching.length > 0, value: matching.length, matchingPheromoneIds: [] };
+
+    case "not_exists":
+      return { met: matching.length === 0, value: 0, matchingPheromoneIds: [] };
+
+    case "value_eq": {
+      if (!condition.field || condition.expected === undefined) {
+        return { met: false, value: 0, matchingPheromoneIds: [] };
+      }
+      const matched = matching.some((t) => {
+        const val = getNestedValue(t.value, condition.field!);
+        return deepEqual(val, condition.expected);
+      });
+      return { met: matched, value: matched ? 1 : 0, matchingPheromoneIds: [] };
+    }
+
+    case "value_neq": {
+      if (!condition.field || condition.expected === undefined) {
+        return { met: false, value: 0, matchingPheromoneIds: [] };
+      }
+      const allNotEqual = matching.length > 0 && matching.every((t) => {
+        const val = getNestedValue(t.value, condition.field!);
+        return !deepEqual(val, condition.expected);
+      });
+      return { met: allNotEqual, value: allNotEqual ? 1 : 0, matchingPheromoneIds: [] };
+    }
+
+    default:
+      return { met: false, value: 0, matchingPheromoneIds: [] };
+  }
+}
+
+/**
+ * Get a nested value from an object using dot-separated path.
+ * e.g., getNestedValue({ a: { b: 1 } }, "a.b") => 1
+ */
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const parts = path.split(".");
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * Simple deep equality check for trace value comparison
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== "object") return false;
+
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => deepEqual(aObj[key], bObj[key]));
 }

@@ -14,9 +14,13 @@ from sbp.types import (
     ScentCondition,
     ThresholdCondition,
     CompositeCondition,
+    TraceCondition,
     TriggerPayload,
     DecayModel,
     ExponentialDecay,
+    InscribeResult,
+    ReadResult,
+    EraseResult,
 )
 
 
@@ -189,6 +193,47 @@ class SbpAgent:
             raise RuntimeError("Agent not running")
 
         return await self._client.sniff(trails, types, min_intensity=min_intensity)
+
+    async def inscribe(
+        self,
+        trail: str,
+        key: str,
+        value: dict[str, Any],
+        *,
+        tags: list[str] | None = None,
+    ) -> InscribeResult:
+        """Inscribe a trace — create or update durable knowledge"""
+        if not self._client:
+            raise RuntimeError("Agent not running")
+
+        return await self._client.inscribe(trail, key, value, tags=tags)
+
+    async def read(
+        self,
+        trails: list[str] | None = None,
+        keys: list[str] | None = None,
+        *,
+        prefix: str | None = None,
+        limit: int = 100,
+    ) -> ReadResult:
+        """Read traces from the blackboard"""
+        if not self._client:
+            raise RuntimeError("Agent not running")
+
+        return await self._client.read(trails, keys, prefix=prefix, limit=limit)
+
+    async def erase(
+        self,
+        trail: str | None = None,
+        keys: list[str] | None = None,
+        *,
+        older_than_ms: int | None = None,
+    ) -> EraseResult:
+        """Erase traces matching criteria"""
+        if not self._client:
+            raise RuntimeError("Agent not running")
+
+        return await self._client.erase(trail, keys, older_than_ms=older_than_ms)
 
     async def run(self) -> None:
         """Run the agent, registering all scents and listening for triggers"""

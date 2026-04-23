@@ -40,7 +40,7 @@ describe("SBP Server Integration", () => {
             expect(res.statusCode).toBe(200);
             const body = res.json();
             expect(body.status).toBe("ok");
-            expect(body.version).toBe("0.1.0");
+            expect(body.version).toBe("0.2.0");
         });
     });
 
@@ -432,5 +432,260 @@ describe("SBP Server Authentication", () => {
             url: "/health",
         });
         expect(res.statusCode).toBe(200);
+    });
+});
+
+// ============================================================================
+// Trace HTTP Integration Tests
+// ============================================================================
+
+describe("SBP Trace Operations (HTTP)", () => {
+    let server: SbpServer;
+    let app: ReturnType<typeof Fastify>;
+
+    beforeAll(async () => {
+        server = new SbpServer({ port: 0, host: "localhost", logging: false });
+        app = (server as unknown as { app: ReturnType<typeof Fastify> }).app;
+        await app.ready();
+    });
+
+    afterAll(async () => {
+        await server.stop();
+    });
+
+    it("sbp/inscribe creates a trace", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/inscribe", {
+                trail: "knowledge",
+                key: "client-profile",
+                value: { name: "Acme Corp", risk: "moderate" },
+                tags: ["institutional"],
+            }),
+        });
+        const body = res.json();
+        expect(body.result).toBeDefined();
+        expect(body.result.action).toBe("created");
+        expect(body.result.version).toBe(1);
+        expect(body.result.trace_id).toBeTruthy();
+    });
+
+    it("sbp/inscribe updates existing trace", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/inscribe", {
+                trail: "knowledge",
+                key: "client-profile",
+                value: { name: "Acme Corp", risk: "aggressive" },
+            }),
+        });
+        const body = res.json();
+        expect(body.result.action).toBe("updated");
+        expect(body.result.version).toBe(2);
+    });
+
+    it("sbp/read returns matching traces", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/read", {
+                trails: ["knowledge"],
+            }),
+        });
+        const body = res.json();
+        expect(body.result.traces.length).toBe(1);
+        expect(body.result.traces[0].key).toBe("client-profile");
+        expect(body.result.traces[0].version).toBe(2);
+    });
+
+    it("sbp/read returns empty for non-matching trail", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/read", {
+                trails: ["nonexistent"],
+            }),
+        });
+        const body = res.json();
+        expect(body.result.traces.length).toBe(0);
+    });
+
+    it("sbp/erase removes matching traces", async () => {
+        // Inscribe something to erase
+        await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/inscribe", {
+                trail: "temp",
+                key: "disposable",
+                value: { data: true },
+            }),
+        });
+
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/erase", { trail: "temp" }),
+        });
+        const body = res.json();
+        expect(body.result.erased_count).toBe(1);
+        expect(body.result.trails_affected).toEqual(["temp"]);
+    });
+
+    it("sbp/inspect includes traces when requested", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/inspect", {
+                include: ["traces", "stats"],
+            }),
+        });
+        const body = res.json();
+        expect(body.result.traces).toBeDefined();
+        expect(body.result.stats.total_traces).toBeGreaterThanOrEqual(0);
+    });
+
+    it("sbp/inscribe validates empty trail", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/inscribe", {
+                trail: "",
+                key: "test",
+                value: {},
+            }),
+        });
+        const body = res.json();
+        expect(body.error).toBeDefined();
+        expect(body.error.code).toBe(-32602);
+    });
+
+    it("sbp/inscribe validates empty key", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            payload: rpc("sbp/inscribe", {
+                trail: "test",
+                key: "",
+                value: {},
+            }),
+        });
+        const body = res.json();
+        expect(body.error).toBeDefined();
+        expect(body.error.code).toBe(-32602);
+    });
+
+    it("REST /inscribe endpoint works", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/inscribe",
+            payload: {
+                trail: "rest-test",
+                key: "doc",
+                value: { content: "hello" },
+            },
+        });
+        const body = res.json();
+        expect(body.action).toBe("created");
+    });
+
+    it("REST /read endpoint works", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/read",
+            payload: { trails: ["rest-test"] },
+        });
+        const body = res.json();
+        expect(body.traces.length).toBe(1);
+    });
+
+    it("REST /erase endpoint works", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/erase",
+            payload: { trail: "rest-test" },
+        });
+        const body = res.json();
+        expect(body.erased_count).toBe(1);
+    });
+});
+
+// ============================================================================
+// Trace Write Permissions
+// ============================================================================
+
+describe("Trace Write Permissions", () => {
+    let server: SbpServer;
+    let app: ReturnType<typeof Fastify>;
+
+    beforeAll(async () => {
+        server = new SbpServer({
+            port: 0,
+            host: "localhost",
+            logging: false,
+            auth: {
+                apiKeys: ["read-key", "write-key"],
+                requireAuth: true,
+                traceWriteKeys: ["write-key"],
+            },
+        });
+        app = (server as unknown as { app: ReturnType<typeof Fastify> }).app;
+        await app.ready();
+    });
+
+    afterAll(async () => {
+        await server.stop();
+    });
+
+    it("allows read-key to read traces", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            headers: { Authorization: "Bearer read-key" },
+            payload: rpc("sbp/read", {}),
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json().result).toBeDefined();
+    });
+
+    it("blocks read-key from inscribing traces", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            headers: { Authorization: "Bearer read-key" },
+            payload: rpc("sbp/inscribe", {
+                trail: "test",
+                key: "blocked",
+                value: {},
+            }),
+        });
+        expect(res.statusCode).toBe(403);
+    });
+
+    it("allows write-key to inscribe traces", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            headers: { Authorization: "Bearer write-key" },
+            payload: rpc("sbp/inscribe", {
+                trail: "test",
+                key: "allowed",
+                value: { permitted: true },
+            }),
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json().result.action).toBe("created");
+    });
+
+    it("blocks read-key from erasing traces", async () => {
+        const res = await app.inject({
+            method: "POST",
+            url: "/sbp",
+            headers: { Authorization: "Bearer read-key" },
+            payload: rpc("sbp/erase", { trail: "test" }),
+        });
+        expect(res.statusCode).toBe(403);
     });
 });

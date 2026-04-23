@@ -15,10 +15,13 @@ import type {
   EvaporateParams,
   InspectParams,
   TriggerPayload,
+  InscribeParams,
+  ReadParams,
+  EraseParams,
 } from "./types.js";
 import { v7 as uuidv7 } from "uuid";
 import { validateEnvelope, validateParams } from "./validation.js";
-import { createAuthHook, type AuthOptions } from "./auth.js";
+import { createAuthHook, createTraceWriteHook, type AuthOptions } from "./auth.js";
 import { createRateLimitHook, type RateLimitOptions } from "./rate-limiter.js";
 
 export interface ServerOptions extends BlackboardOptions {
@@ -47,7 +50,7 @@ interface SSEClient {
 export class SbpServer {
   private app: FastifyInstance;
   public readonly blackboard: Blackboard;
-  private options: Required<Omit<ServerOptions, "auth" | "rateLimit" | "store">> & {
+  private options: Required<Omit<ServerOptions, "auth" | "rateLimit" | "store" | "traceStore">> & {
     auth?: AuthOptions;
     rateLimit?: RateLimitOptions;
   };
@@ -81,6 +84,7 @@ export class SbpServer {
     // Authentication hook
     if (this.options.auth?.requireAuth) {
       this.app.addHook("onRequest", createAuthHook(this.options.auth));
+      this.app.addHook("preHandler", createTraceWriteHook(this.options.auth));
     }
 
     // Rate limiting hook
@@ -109,7 +113,7 @@ export class SbpServer {
       const stats = this.blackboard.inspect({ include: ["stats"] });
       return {
         status: "ok",
-        version: "0.1.0",
+        version: "0.2.0",
         transport: "streamable-http-sse",
         ...stats.stats,
       };
@@ -158,6 +162,22 @@ export class SbpServer {
       const query = request.query as { include?: string };
       const include = query.include?.split(",") as InspectParams["include"];
       return this.blackboard.inspect({ include });
+    });
+
+    // Convenience REST endpoints - Traces
+    this.app.post("/inscribe", async (request) => {
+      const params = request.body as InscribeParams;
+      return this.blackboard.inscribe(params);
+    });
+
+    this.app.post("/read", async (request) => {
+      const params = request.body as ReadParams;
+      return this.blackboard.read(params);
+    });
+
+    this.app.post("/erase", async (request) => {
+      const params = request.body as EraseParams;
+      return this.blackboard.erase(params);
     });
   }
 
@@ -346,6 +366,18 @@ export class SbpServer {
 
         case "sbp/inspect":
           result = this.blackboard.inspect(params as InspectParams);
+          break;
+
+        case "sbp/inscribe":
+          result = this.blackboard.inscribe(params as InscribeParams);
+          break;
+
+        case "sbp/read":
+          result = this.blackboard.read(params as ReadParams);
+          break;
+
+        case "sbp/erase":
+          result = this.blackboard.erase(params as EraseParams);
           break;
 
         case "sbp/subscribe": {

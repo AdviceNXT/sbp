@@ -6,6 +6,7 @@ from sbp.types import (
     ThresholdCondition,
     CompositeCondition,
     RateCondition,
+    TraceCondition,
     ScentCondition,
 )
 
@@ -166,4 +167,42 @@ def with_cooldown_guard(
     return and_(
         condition,
         not_(exists(guard_trail, guard_type))
+    )
+
+
+# ============================================================================
+# TRACE CONDITION HELPERS
+# ============================================================================
+
+def trace_exists(trail: str, key: str = "*") -> TraceCondition:
+    """Trigger when a trace with this trail+key exists.
+
+    Example:
+        trace_exists("config", "risk-tolerance")
+    """
+    return TraceCondition(trail=trail, key=key, operator="exists")
+
+
+def trace_not_exists(trail: str, key: str = "*") -> TraceCondition:
+    """Trigger when a trace with this trail+key does NOT exist."""
+    return TraceCondition(trail=trail, key=key, operator="not_exists")
+
+
+def trace_equals(
+    trail: str,
+    key: str,
+    field: str,
+    expected: object,
+) -> TraceCondition:
+    """Trigger when a trace's field equals an expected value.
+
+    Example:
+        trace_equals("config", "mode", "value", "aggressive")
+    """
+    return TraceCondition(
+        trail=trail,
+        key=key,
+        operator="value_eq",
+        field=field,
+        expected=expected,
     )

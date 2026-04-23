@@ -284,4 +284,126 @@ describe("Blackboard", () => {
       expect(result.trails!.find((t) => t.name === "a")?.pheromone_count).toBe(2);
     });
   });
+
+  describe("traces", () => {
+    it("should inscribe a new trace", () => {
+      const result = bb.inscribe({
+        trail: "knowledge",
+        key: "client-profile",
+        value: { name: "Acme Corp", risk: "moderate" },
+      });
+
+      expect(result.action).toBe("created");
+      expect(result.version).toBe(1);
+      expect(result.trace_id).toBeDefined();
+    });
+
+    it("should update existing trace (same trail+key), bumping version", () => {
+      bb.inscribe({
+        trail: "knowledge",
+        key: "client-profile",
+        value: { name: "Acme Corp", risk: "moderate" },
+      });
+
+      const result = bb.inscribe({
+        trail: "knowledge",
+        key: "client-profile",
+        value: { name: "Acme Corp", risk: "aggressive" },
+      });
+
+      expect(result.action).toBe("updated");
+      expect(result.version).toBe(2);
+    });
+
+    it("should read traces by trail", () => {
+      bb.inscribe({ trail: "config", key: "risk", value: { level: "high" } });
+      bb.inscribe({ trail: "config", key: "mode", value: { active: true } });
+      bb.inscribe({ trail: "history", key: "event-1", value: { type: "trade" } });
+
+      const result = bb.read({ trails: ["config"] });
+      expect(result.traces.length).toBe(2);
+      expect(result.traces.every((t) => t.trail === "config")).toBe(true);
+    });
+
+    it("should read traces by key", () => {
+      bb.inscribe({ trail: "config", key: "risk", value: { level: "high" } });
+      bb.inscribe({ trail: "config", key: "mode", value: { active: true } });
+
+      const result = bb.read({ keys: ["risk"] });
+      expect(result.traces.length).toBe(1);
+      expect(result.traces[0].key).toBe("risk");
+    });
+
+    it("should read traces by prefix", () => {
+      bb.inscribe({ trail: "logs", key: "2026-04-01", value: { msg: "a" } });
+      bb.inscribe({ trail: "logs", key: "2026-04-02", value: { msg: "b" } });
+      bb.inscribe({ trail: "logs", key: "2026-03-31", value: { msg: "c" } });
+
+      const result = bb.read({ prefix: "2026-04" });
+      expect(result.traces.length).toBe(2);
+    });
+
+    it("should read traces by tags", () => {
+      bb.inscribe({ trail: "docs", key: "readme", value: { content: "..." }, tags: ["public"] });
+      bb.inscribe({ trail: "docs", key: "internal", value: { content: "..." }, tags: ["private"] });
+
+      const result = bb.read({ tags: { any: ["public"] } });
+      expect(result.traces.length).toBe(1);
+      expect(result.traces[0].key).toBe("readme");
+    });
+
+    it("should erase traces by trail", () => {
+      bb.inscribe({ trail: "temp", key: "a", value: { x: 1 } });
+      bb.inscribe({ trail: "temp", key: "b", value: { x: 2 } });
+      bb.inscribe({ trail: "keep", key: "c", value: { x: 3 } });
+
+      const result = bb.erase({ trail: "temp" });
+      expect(result.erased_count).toBe(2);
+      expect(result.trails_affected).toEqual(["temp"]);
+      expect(bb.traceCount).toBe(1);
+    });
+
+    it("should erase traces by key", () => {
+      bb.inscribe({ trail: "data", key: "stale", value: {} });
+      bb.inscribe({ trail: "data", key: "fresh", value: {} });
+
+      const result = bb.erase({ keys: ["stale"] });
+      expect(result.erased_count).toBe(1);
+      expect(bb.traceCount).toBe(1);
+    });
+
+    it("traces survive GC while pheromones get collected", async () => {
+      // Inscribe a permanent trace
+      bb.inscribe({ trail: "memory", key: "fact", value: { learned: true } });
+
+      // Emit a fast-decaying pheromone
+      bb.emit({
+        trail: "signal",
+        type: "alert",
+        intensity: 0.5,
+        decay: { type: "linear", rate_per_ms: 1 },
+      });
+
+      expect(bb.size).toBe(1);
+      expect(bb.traceCount).toBe(1);
+
+      // Wait for pheromone to decay
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      const removed = bb.gc();
+      expect(removed).toBe(1);     // Pheromone collected
+      expect(bb.size).toBe(0);     // No pheromones left
+      expect(bb.traceCount).toBe(1); // Trace persists!
+    });
+
+    it("should include traces in inspect", () => {
+      bb.inscribe({ trail: "config", key: "mode", value: { active: true } });
+
+      const result = bb.inspect({ include: ["traces", "stats"] });
+      expect(result.traces).toBeDefined();
+      expect(result.traces!.length).toBe(1);
+      expect(result.traces![0].key).toBe("mode");
+      expect(result.stats!.total_traces).toBe(1);
+    });
+  });
 });

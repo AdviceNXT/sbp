@@ -684,3 +684,209 @@ describe("Garbage Collection", () => {
         expect(bb.size).toBe(0);
     });
 });
+
+// ============================================================================
+// TRACE CONDITIONS
+// ============================================================================
+
+describe("Trace Conditions", () => {
+    const now = Date.now();
+    const pheromones: Pheromone[] = [
+        makePheromone({ trail: "market", type: "volatility", initial_intensity: 0.8 }),
+    ];
+
+    const traces = [
+        {
+            id: "t1",
+            trail: "config",
+            key: "risk-tolerance",
+            value: { level: "moderate", threshold: 0.7 },
+            created_at: now - 1000,
+            updated_at: now - 500,
+            version: 2,
+            tags: ["settings"],
+        },
+        {
+            id: "t2",
+            trail: "config",
+            key: "mode",
+            value: { active: true },
+            created_at: now - 2000,
+            updated_at: now - 2000,
+            version: 1,
+            tags: [],
+        },
+    ];
+
+    it("exists: returns true when trace exists", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "risk-tolerance",
+            operator: "exists",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(true);
+        expect(result.value).toBe(1);
+    });
+
+    it("exists: returns false when trace does not exist", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "nonexistent",
+            operator: "exists",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(false);
+    });
+
+    it("exists with wildcard key matches any key in trail", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "*",
+            operator: "exists",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(true);
+        expect(result.value).toBe(2); // Two traces in "config" trail
+    });
+
+    it("not_exists: returns true when trace absent", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "missing",
+            operator: "not_exists",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(true);
+    });
+
+    it("not_exists: returns false when trace present", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "mode",
+            operator: "not_exists",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(false);
+    });
+
+    it("value_eq: matches field value", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "risk-tolerance",
+            operator: "value_eq",
+            field: "level",
+            expected: "moderate",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(true);
+    });
+
+    it("value_eq: fails on mismatch", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "risk-tolerance",
+            operator: "value_eq",
+            field: "level",
+            expected: "aggressive",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(false);
+    });
+
+    it("value_eq: supports nested field paths", () => {
+        const nestedTraces = [
+            {
+                id: "t3",
+                trail: "deep",
+                key: "nested",
+                value: { a: { b: { c: 42 } } },
+                created_at: now,
+                updated_at: now,
+                version: 1,
+                tags: [],
+            },
+        ];
+
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "deep",
+            key: "nested",
+            operator: "value_eq",
+            field: "a.b.c",
+            expected: 42,
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces: nestedTraces });
+        expect(result.met).toBe(true);
+    });
+
+    it("value_neq: matches when values differ", () => {
+        const condition: ScentCondition = {
+            type: "trace",
+            trail: "config",
+            key: "risk-tolerance",
+            operator: "value_neq",
+            field: "level",
+            expected: "aggressive",
+        };
+        const result = evaluateCondition(condition, { pheromones: [], now, traces });
+        expect(result.met).toBe(true);
+    });
+
+    it("composite: pheromone threshold AND trace exists (cross-layer)", () => {
+        const condition: ScentCondition = {
+            type: "composite",
+            operator: "and",
+            conditions: [
+                {
+                    type: "threshold",
+                    trail: "market",
+                    signal_type: "volatility",
+                    aggregation: "max",
+                    operator: ">=",
+                    value: 0.5,
+                },
+                {
+                    type: "trace",
+                    trail: "config",
+                    key: "risk-tolerance",
+                    operator: "exists",
+                },
+            ],
+        };
+        const result = evaluateCondition(condition, { pheromones, now, traces });
+        expect(result.met).toBe(true);
+    });
+
+    it("composite: pheromone AND trace fails when trace missing", () => {
+        const condition: ScentCondition = {
+            type: "composite",
+            operator: "and",
+            conditions: [
+                {
+                    type: "threshold",
+                    trail: "market",
+                    signal_type: "volatility",
+                    aggregation: "max",
+                    operator: ">=",
+                    value: 0.5,
+                },
+                {
+                    type: "trace",
+                    trail: "config",
+                    key: "nonexistent",
+                    operator: "exists",
+                },
+            ],
+        };
+        const result = evaluateCondition(condition, { pheromones, now, traces });
+        expect(result.met).toBe(false);
+    });
+});

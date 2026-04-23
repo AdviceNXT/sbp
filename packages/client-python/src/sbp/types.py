@@ -141,7 +141,18 @@ class RateCondition(BaseModel):
     value: float
 
 
-ScentCondition = Union[ThresholdCondition, CompositeCondition, RateCondition]
+class TraceCondition(BaseModel):
+    """Trace-based condition — triggers on durable knowledge state"""
+
+    type: Literal["trace"] = "trace"
+    trail: str
+    key: str                                # "*" for any key in trail
+    operator: Literal["exists", "not_exists", "value_eq", "value_neq"]
+    field: str | None = None                # Dot-separated path into trace value
+    expected: Any | None = None             # Expected value for comparison
+
+
+ScentCondition = Union[ThresholdCondition, CompositeCondition, RateCondition, TraceCondition]
 
 # Update forward refs for recursive types
 CompositeCondition.model_rebuild()
@@ -309,3 +320,75 @@ class JsonRpcResponse(BaseModel):
     id: str | int | None
     result: Any | None = None
     error: JsonRpcError | None = None
+
+
+# ============================================================================
+# TRACES — Durable Knowledge Records
+# ============================================================================
+
+TRACE_MAX_VALUE_SIZE = 1_048_576  # 1 MB
+
+
+class Trace(BaseModel):
+    """A durable knowledge record in the blackboard"""
+
+    id: str
+    trail: str
+    key: str
+    value: dict[str, Any] = Field(default_factory=dict)
+    created_at: int
+    updated_at: int
+    version: int
+    source_agent: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class InscribeParams(BaseModel):
+    """Parameters for INSCRIBE operation"""
+
+    trail: str
+    key: str
+    value: dict[str, Any]
+    tags: list[str] = Field(default_factory=list)
+    source_agent: str | None = None
+
+
+class InscribeResult(BaseModel):
+    """Result of INSCRIBE operation"""
+
+    trace_id: str
+    action: Literal["created", "updated"]
+    version: int
+
+
+class ReadParams(BaseModel):
+    """Parameters for READ operation"""
+
+    trails: list[str] | None = None
+    keys: list[str] | None = None
+    tags: TagFilter | None = None
+    prefix: str | None = None
+    limit: int = 100
+
+
+class ReadResult(BaseModel):
+    """Result of READ operation"""
+
+    timestamp: int
+    traces: list[Trace]
+
+
+class EraseParams(BaseModel):
+    """Parameters for ERASE operation"""
+
+    trail: str | None = None
+    keys: list[str] | None = None
+    tags: TagFilter | None = None
+    older_than_ms: int | None = None
+
+
+class EraseResult(BaseModel):
+    """Result of ERASE operation"""
+
+    erased_count: int
+    trails_affected: list[str]

@@ -1,14 +1,17 @@
 # Stigmergic Blackboard Protocol (SBP)
 
-**Version:** 0.1.0-draft
+**Version:** 0.2.0
 **Status:** Draft Specification
-**Date:** 2026-02-07
+**Date:** 2026-04-23
 
 ---
 
 ## Abstract
 
-The Stigmergic Blackboard Protocol (SBP) defines a standard for environment-based coordination between autonomous agents. Instead of direct agent-to-agent messaging, agents interact through a shared digital environment by depositing and sensing **Digital Pheromones**—data signals with intensity and natural decay.
+The Stigmergic Blackboard Protocol (SBP) defines a standard for environment-based coordination between autonomous agents. Instead of direct agent-to-agent messaging, agents interact through a shared digital environment using two complementary layers:
+
+1. **Digital Pheromones** — Ephemeral data signals with intensity and natural decay for real-time coordination.
+2. **Traces** — Durable knowledge records for institutional memory that persist until explicitly erased.
 
 SBP enables decoupled, self-organizing multi-agent systems where coordination emerges from environmental state rather than explicit orchestration.
 
@@ -99,11 +102,14 @@ Complex coordination emerges from simple threshold rules combining multiple sign
 | **Intensity** | A non-negative floating-point value representing signal strength |
 | **Decay Rate** | The rate at which intensity diminishes per time unit |
 | **Half-Life** | Time for a pheromone to decay to 50% intensity (alternative to decay rate) |
-| **Trail** | A namespaced category of related pheromones |
+| **Trail** | A namespaced category of related pheromones and traces |
 | **Scent** | A threshold condition that triggers agent activation |
 | **Sniff** | The act of an agent sensing the current environmental state |
 | **Emit** | Depositing a new pheromone or reinforcing an existing one |
 | **Evaporate** | The natural decay of pheromone intensity over time |
+| **Trace** | A durable knowledge record with trail, key, and versioned value |
+| **Inscribe** | Creating or updating a trace in the blackboard |
+| **Erase** | Removing traces from the blackboard |
 
 ---
 
@@ -218,6 +224,38 @@ interface RetentionPolicy {
   archive_evaporated: boolean;   // Whether to archive evaporated pheromones
 }
 ```
+
+### 4.5 Trace Structure
+
+A Trace is a durable knowledge record that persists until explicitly erased. Unlike pheromones, traces have no decay model.
+
+```typescript
+interface Trace {
+  // Identity
+  id: string;                    // Unique identifier
+  trail: string;                 // Namespace (shared with pheromones)
+  key: string;                   // Unique key within trail
+
+  // Content
+  value: object;                 // Arbitrary JSON payload (max 1 MB)
+
+  // Temporal
+  created_at: number;            // Unix timestamp (milliseconds)
+  updated_at: number;            // Last modification timestamp
+  version: number;               // Auto-incrementing version counter
+
+  // Metadata
+  source_agent?: string;         // Creating agent identifier (OPTIONAL)
+  tags: string[];                // OPTIONAL classification tags
+}
+```
+
+**Key properties:**
+
+- **Composite uniqueness**: A trace is uniquely identified by the `trail + key` pair. Inscribing the same trail+key updates the existing trace.
+- **No decay**: Traces persist indefinitely until explicitly erased via the ERASE operation.
+- **Versioning**: Each update increments the `version` field, providing optimistic concurrency.
+- **Size limit**: The `value` field MUST NOT exceed 1 MB (1,048,576 bytes) when serialized as JSON.
 
 ---
 
@@ -489,10 +527,105 @@ Get metadata about trails, registered scents, and system state.
 {
   "method": "sbp/inspect",
   "params": {
-    "include": ["trails", "scents", "stats"]
+    "include": ["trails", "scents", "stats", "traces"]
   }
 }
 ```
+
+### 5.6 INSCRIBE
+
+Create or update a durable trace. If a trace with the same `trail + key` already exists, it is updated and its `version` is incremented.
+
+**Request:**
+```json
+{
+  "method": "sbp/inscribe",
+  "params": {
+    "trail": "config",
+    "key": "risk-tolerance",
+    "value": { "level": "moderate", "max_drawdown": 0.15 },
+    "tags": ["settings"],
+    "source_agent": "config-manager"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "trace_id": "t-abc123",
+  "action": "created",
+  "version": 1
+}
+```
+
+The `action` field MUST be `"created"` for new traces or `"updated"` for existing ones.
+
+Servers MAY require elevated API keys for INSCRIBE operations (see Section 11).
+
+### 5.7 READ
+
+Read traces matching filter criteria. All filter parameters are OPTIONAL; omitting all returns all traces.
+
+**Request:**
+```json
+{
+  "method": "sbp/read",
+  "params": {
+    "trails": ["config"],
+    "keys": ["risk-tolerance"],
+    "prefix": "risk",
+    "tags": { "any": ["settings"] },
+    "limit": 100
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "timestamp": 1707350400000,
+  "traces": [
+    {
+      "id": "t-abc123",
+      "trail": "config",
+      "key": "risk-tolerance",
+      "value": { "level": "moderate", "max_drawdown": 0.15 },
+      "created_at": 1707350300000,
+      "updated_at": 1707350400000,
+      "version": 1,
+      "source_agent": "config-manager",
+      "tags": ["settings"]
+    }
+  ]
+}
+```
+
+### 5.8 ERASE
+
+Remove traces matching filter criteria.
+
+**Request:**
+```json
+{
+  "method": "sbp/erase",
+  "params": {
+    "trail": "config",
+    "keys": ["risk-tolerance"],
+    "older_than_ms": 86400000
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "erased_count": 1,
+  "trails_affected": ["config"]
+}
+```
+
+Servers MAY require elevated API keys for ERASE operations (see Section 11).
 
 ---
 
@@ -565,6 +698,55 @@ Optional edge-triggering mode:
 {
   "trigger_mode": "edge_rising",  // Trigger only when crossing threshold upward
   "hysteresis": 0.1               // Must fall 0.1 below threshold before re-triggering
+}
+```
+
+### 7.5 Trace Conditions
+
+Scent conditions MAY reference trace state in addition to pheromone state. This enables cross-layer triggers that combine real-time signals with durable knowledge.
+
+```typescript
+interface TraceCondition {
+  type: "trace";
+  trail: string;
+  key: string;           // Use "*" for wildcard (any key in trail)
+  operator: "exists" | "not_exists" | "value_eq" | "value_neq";
+  field?: string;        // Dot-separated path for value comparison
+  expected?: unknown;    // Expected value for value_eq / value_neq
+}
+```
+
+**Operators:**
+
+| Operator | Returns true when |
+|----------|-------------------|
+| `exists` | A trace with the given trail+key is present |
+| `not_exists` | No trace with the given trail+key is present |
+| `value_eq` | The trace's `field` path equals `expected` |
+| `value_neq` | The trace's `field` path differs from `expected` |
+
+**Cross-layer example** — trigger when volatility is high AND risk config exists:
+
+```json
+{
+  "type": "composite",
+  "operator": "and",
+  "conditions": [
+    {
+      "type": "threshold",
+      "trail": "market",
+      "signal_type": "volatility",
+      "aggregation": "max",
+      "operator": ">=",
+      "value": 0.7
+    },
+    {
+      "type": "trace",
+      "trail": "config",
+      "key": "risk-tolerance",
+      "operator": "exists"
+    }
+  ]
 }
 ```
 

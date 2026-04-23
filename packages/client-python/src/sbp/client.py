@@ -28,7 +28,13 @@ from sbp.types import (
     ScentCondition,
     EmitParams,
     DeregisterScentParams,
-    InspectParams
+    InspectParams,
+    InscribeResult,
+    ReadParams,
+    ReadResult,
+    EraseParams,
+    EraseResult,
+    Trace,
 )
 from sbp.blackboard import LocalBlackboard, get_shared_blackboard
 
@@ -145,6 +151,12 @@ class AsyncSbpClient:
             elif method == "sbp/unsubscribe":
                 # Handled by unsubscribe() wrapper
                 return {"unsubscribed": params["scent_id"]}
+            elif method == "sbp/inscribe":
+                return self._local_blackboard.inscribe(params).model_dump()
+            elif method == "sbp/read":
+                return self._local_blackboard.read(ReadParams(**params)).model_dump()
+            elif method == "sbp/erase":
+                return self._local_blackboard.erase(EraseParams(**params)).model_dump()
             else:
                 raise SbpError(-32601, f"Method not found: {method}")
 
@@ -307,9 +319,68 @@ class AsyncSbpClient:
         self, include: list[str] | None = None
     ) -> InspectResult:
         """Inspect blackboard state"""
-        params = {"include": include or ["trails", "scents", "stats"]}
+        params = {"include": include or ["trails", "scents", "stats", "traces"]}
         result = await self._rpc("sbp/inspect", params)
         return InspectResult.model_validate(result)
+
+    # ==========================================================================
+    # TRACE OPERATIONS
+    # ==========================================================================
+
+    async def inscribe(
+        self,
+        trail: str,
+        key: str,
+        value: dict[str, Any],
+        *,
+        tags: list[str] | None = None,
+    ) -> InscribeResult:
+        """Inscribe a trace — create or update a durable knowledge record"""
+        params: dict[str, Any] = {
+            "trail": trail,
+            "key": key,
+            "value": value,
+            "source_agent": self.agent_id,
+        }
+        if tags:
+            params["tags"] = tags
+
+        result = await self._rpc("sbp/inscribe", params)
+        return InscribeResult.model_validate(result)
+
+    async def read(
+        self,
+        trails: list[str] | None = None,
+        keys: list[str] | None = None,
+        *,
+        prefix: str | None = None,
+        limit: int = 100,
+    ) -> ReadResult:
+        """Read traces from the blackboard"""
+        params = ReadParams(
+            trails=trails,
+            keys=keys,
+            prefix=prefix,
+            limit=limit,
+        )
+        result = await self._rpc("sbp/read", params.model_dump(exclude_none=True))
+        return ReadResult.model_validate(result)
+
+    async def erase(
+        self,
+        trail: str | None = None,
+        keys: list[str] | None = None,
+        *,
+        older_than_ms: int | None = None,
+    ) -> EraseResult:
+        """Erase traces matching criteria"""
+        params = EraseParams(
+            trail=trail,
+            keys=keys,
+            older_than_ms=older_than_ms,
+        )
+        result = await self._rpc("sbp/erase", params.model_dump(exclude_none=True))
+        return EraseResult.model_validate(result)
 
     # ==========================================================================
     # SSE SUBSCRIPTIONS
@@ -524,6 +595,41 @@ class SbpClient:
 
     def inspect(self, include: list[str] | None = None) -> InspectResult:
         return self._run(self._async_client.inspect(include))
+
+    def inscribe(
+        self,
+        trail: str,
+        key: str,
+        value: dict[str, Any],
+        *,
+        tags: list[str] | None = None,
+    ) -> InscribeResult:
+        return self._run(
+            self._async_client.inscribe(trail, key, value, tags=tags)
+        )
+
+    def read(
+        self,
+        trails: list[str] | None = None,
+        keys: list[str] | None = None,
+        *,
+        prefix: str | None = None,
+        limit: int = 100,
+    ) -> ReadResult:
+        return self._run(
+            self._async_client.read(trails, keys, prefix=prefix, limit=limit)
+        )
+
+    def erase(
+        self,
+        trail: str | None = None,
+        keys: list[str] | None = None,
+        *,
+        older_than_ms: int | None = None,
+    ) -> EraseResult:
+        return self._run(
+            self._async_client.erase(trail, keys, older_than_ms=older_than_ms)
+        )
 
     def __enter__(self) -> "SbpClient":
         self.connect()

@@ -5,26 +5,38 @@
 import { v7 as uuidv7 } from "uuid";
 import type { PheromoneStore } from "./store.js";
 import { MemoryStore } from "./store.js";
-import type {
-  Pheromone,
-  PheromoneSnapshot,
-  Scent,
-  DecayModel,
-  EmitParams,
-  EmitResult,
-  SniffParams,
-  SniffResult,
-  AggregateStats,
-  RegisterScentParams,
-  RegisterScentResult,
-  DeregisterScentParams,
-  DeregisterScentResult,
-  EvaporateParams,
-  EvaporateResult,
-  InspectParams,
-  InspectResult,
-  TriggerPayload,
-  TagFilter,
+import type { TraceStore } from "./trace-store.js";
+import { MemoryTraceStore } from "./trace-store.js";
+import {
+  type Pheromone,
+  type PheromoneSnapshot,
+  type Scent,
+  type DecayModel,
+  type EmitParams,
+  type EmitResult,
+  type SniffParams,
+  type SniffResult,
+  type AggregateStats,
+  type RegisterScentParams,
+  type RegisterScentResult,
+  type DeregisterScentParams,
+  type DeregisterScentResult,
+  type EvaporateParams,
+  type EvaporateResult,
+  type InspectParams,
+  type InspectResult,
+  type TriggerPayload,
+  type TagFilter,
+  type Trace,
+  type InscribeParams,
+  type InscribeResult,
+  type ReadParams,
+  type ReadResult,
+  type EraseParams,
+  type EraseResult,
+  type TraceInfo,
+  TRACE_MAX_VALUE_SIZE,
+  SbpError,
 } from "./types.js";
 import { computeIntensity, isEvaporated, defaultDecay } from "./decay.js";
 import { evaluateCondition, createSnapshot } from "./conditions.js";
@@ -45,6 +57,8 @@ export interface BlackboardOptions {
   emissionHistoryWindow?: number;
   /** Pluggable pheromone storage backend (default: MemoryStore) */
   store?: PheromoneStore;
+  /** Pluggable trace storage backend (default: MemoryTraceStore) */
+  traceStore?: TraceStore;
 }
 
 export interface TriggerHandler {
@@ -53,16 +67,18 @@ export interface TriggerHandler {
 
 export class Blackboard {
   private store: PheromoneStore;
+  private traceStore: TraceStore;
   private scents = new Map<string, Scent>();
   private triggerHandlers = new Map<string, TriggerHandler>();
   private emissionHistory: Array<{ trail: string; type: string; timestamp: number }> = [];
   private evaluationTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
 
-  private options: Omit<Required<BlackboardOptions>, "store">;
+  private options: Omit<Required<BlackboardOptions>, "store" | "traceStore">;
 
   constructor(options: BlackboardOptions = {}) {
     this.store = options.store ?? new MemoryStore();
+    this.traceStore = options.traceStore ?? new MemoryTraceStore();
     this.options = {
       evaluationInterval: options.evaluationInterval ?? 100,
       defaultDecay: options.defaultDecay ?? defaultDecay(),
@@ -302,6 +318,7 @@ export class Blackboard {
       pheromones: [...this.store.values()],
       now,
       emissionHistory: this.emissionHistory,
+      traces: [...this.traceStore.values()],
     });
 
     return {
@@ -402,6 +419,19 @@ export class Blackboard {
       }));
     }
 
+    if (include.includes("traces")) {
+      const traceInfos: TraceInfo[] = [];
+      for (const t of this.traceStore.values()) {
+        traceInfos.push({
+          trail: t.trail,
+          key: t.key,
+          version: t.version,
+          updated_at: t.updated_at,
+        });
+      }
+      result.traces = traceInfos;
+    }
+
     if (include.includes("stats")) {
       let activeCount = 0;
       for (const p of this.store.values()) {
@@ -412,6 +442,7 @@ export class Blackboard {
         total_pheromones: this.store.size,
         active_pheromones: activeCount,
         total_scents: this.scents.size,
+        total_traces: this.traceStore.size,
         uptime_ms: now - this.startTime,
       };
     }
@@ -481,6 +512,7 @@ export class Blackboard {
         pheromones,
         now,
         emissionHistory: this.emissionHistory,
+        traces: [...this.traceStore.values()],
       });
 
       const shouldTrigger = this.shouldTrigger(scent, evalResult.met, now);
@@ -647,5 +679,136 @@ export class Blackboard {
   private pruneEmissionHistory(now: number): void {
     const cutoff = now - this.options.emissionHistoryWindow;
     this.emissionHistory = this.emissionHistory.filter((e) => e.timestamp >= cutoff);
+  }
+
+  // ==========================================================================
+  // TRACE OPERATIONS — Durable Knowledge Layer
+  // ==========================================================================
+
+  /**
+   * Inscribe a trace — create or update a durable knowledge record.
+   * Matching by trail + key. If exists, bumps version.
+   */
+  inscribe(params: InscribeParams): InscribeResult {
+    const now = Date.now();
+    const { trail, key, value, tags = [], source_agent } = params;
+
+    // Size check
+    const serialized = JSON.stringify(value);
+    if (serialized.length > TRACE_MAX_VALUE_SIZE) {
+      throw new SbpError(
+        -32008,
+        `Trace value exceeds maximum size (${serialized.length} > ${TRACE_MAX_VALUE_SIZE} bytes)`
+      );
+    }
+
+    const existing = this.traceStore.getByKey(trail, key);
+
+    if (existing) {
+      existing.value = value;
+      existing.updated_at = now;
+      existing.version += 1;
+      existing.tags = tags;
+      if (source_agent) existing.source_agent = source_agent;
+      this.traceStore.set(existing.id, existing);
+
+      return {
+        trace_id: existing.id,
+        action: "updated",
+        version: existing.version,
+      };
+    }
+
+    const id = uuidv7();
+    const trace: Trace = {
+      id,
+      trail,
+      key,
+      value,
+      created_at: now,
+      updated_at: now,
+      version: 1,
+      source_agent,
+      tags,
+    };
+
+    this.traceStore.set(id, trace);
+
+    return {
+      trace_id: id,
+      action: "created",
+      version: 1,
+    };
+  }
+
+  /**
+   * Read traces from the blackboard.
+   */
+  read(params: ReadParams = {}): ReadResult {
+    const now = Date.now();
+    const { trails, keys, tags, prefix, limit = 100 } = params;
+
+    const results: Trace[] = [];
+
+    for (const t of this.traceStore.values()) {
+      // Filter by trail
+      if (trails && trails.length > 0 && !trails.includes(t.trail)) continue;
+
+      // Filter by key
+      if (keys && keys.length > 0 && !keys.includes(t.key)) continue;
+
+      // Filter by prefix
+      if (prefix && !t.key.startsWith(prefix)) continue;
+
+      // Filter by tags
+      if (tags && !this.matchTags(t.tags, tags)) continue;
+
+      results.push(t);
+    }
+
+    // Sort by updated_at descending (most recent first)
+    results.sort((a, b) => b.updated_at - a.updated_at);
+
+    return {
+      timestamp: now,
+      traces: results.slice(0, limit),
+    };
+  }
+
+  /**
+   * Erase traces matching criteria.
+   */
+  erase(params: EraseParams = {}): EraseResult {
+    const now = Date.now();
+    const { trail, keys, tags, older_than_ms } = params;
+
+    const toRemove: string[] = [];
+    const trailsAffected = new Set<string>();
+
+    for (const [id, t] of this.traceStore.entries()) {
+      if (trail && t.trail !== trail) continue;
+      if (keys && keys.length > 0 && !keys.includes(t.key)) continue;
+      if (older_than_ms !== undefined && now - t.updated_at < older_than_ms) continue;
+      if (tags && !this.matchTags(t.tags, tags)) continue;
+
+      toRemove.push(id);
+      trailsAffected.add(t.trail);
+    }
+
+    for (const id of toRemove) {
+      this.traceStore.delete(id);
+    }
+
+    return {
+      erased_count: toRemove.length,
+      trails_affected: [...trailsAffected],
+    };
+  }
+
+  /**
+   * Get trace count
+   */
+  get traceCount(): number {
+    return this.traceStore.size;
   }
 }

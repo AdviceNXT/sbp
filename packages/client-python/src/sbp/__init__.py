@@ -14,6 +14,7 @@ from sbp.types import (
     ThresholdCondition,
     CompositeCondition,
     RateCondition,
+    TraceCondition,
     ScentCondition,
     EmitParams,
     EmitResult,
@@ -22,6 +23,14 @@ from sbp.types import (
     RegisterScentParams,
     RegisterScentResult,
     TriggerPayload,
+    Trace,
+    InscribeParams,
+    InscribeResult,
+    ReadParams,
+    ReadResult,
+    EraseParams,
+    EraseResult,
+    TRACE_MAX_VALUE_SIZE,
 )
 from sbp.agent import SbpAgent, run_agent
 from sbp.conditions import (
@@ -38,6 +47,10 @@ from sbp.conditions import (
     not_,
     # Rate builders
     rate,
+    # Trace builders
+    trace_exists,
+    trace_not_exists,
+    trace_equals,
     # Common patterns
     quorum,
     heartbeat_stale,
@@ -46,7 +59,7 @@ from sbp.conditions import (
     with_cooldown_guard,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     # Client
     "SbpClient",
@@ -67,6 +80,7 @@ __all__ = [
     "ThresholdCondition",
     "CompositeCondition",
     "RateCondition",
+    "TraceCondition",
     "ScentCondition",
     # Types - Operations
     "EmitParams",
@@ -76,6 +90,15 @@ __all__ = [
     "RegisterScentParams",
     "RegisterScentResult",
     "TriggerPayload",
+    # Types - Traces
+    "Trace",
+    "InscribeParams",
+    "InscribeResult",
+    "ReadParams",
+    "ReadResult",
+    "EraseParams",
+    "EraseResult",
+    "TRACE_MAX_VALUE_SIZE",
     # Condition Builders - Basic
     "threshold",
     "exists",
@@ -89,6 +112,10 @@ __all__ = [
     "not_",
     # Condition Builders - Rate
     "rate",
+    # Condition Builders - Trace
+    "trace_exists",
+    "trace_not_exists",
+    "trace_equals",
     # Condition Builders - Patterns
     "quorum",
     "heartbeat_stale",

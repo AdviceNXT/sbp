@@ -8,6 +8,8 @@ from sbp.types import (
     ThresholdCondition,
     CompositeCondition,
     RateCondition,
+    TraceCondition,
+    Trace,
     TagFilter
 )
 from sbp.decay import compute_intensity, is_evaporated
@@ -17,11 +19,13 @@ class EvaluationContext:
         self,
         pheromones: List[Pheromone],
         now: int,
-        emission_history: Optional[List[Dict[str, Any]]] = None
+        emission_history: Optional[List[Dict[str, Any]]] = None,
+        traces: Optional[List[Trace]] = None
     ):
         self.pheromones = pheromones
         self.now = now
         self.emission_history = emission_history or []
+        self.traces = traces or []
 
 class EvaluationResult:
     def __init__(self, met: bool, value: float, matching_pheromone_ids: List[str]):
@@ -37,6 +41,8 @@ def evaluate_condition(condition: ScentCondition, ctx: EvaluationContext) -> Eva
         return evaluate_composite(condition, ctx) # type: ignore
     elif condition.type == "rate":
         return evaluate_rate(condition, ctx) # type: ignore
+    elif condition.type == "trace":
+        return evaluate_trace(condition, ctx) # type: ignore
 
     return EvaluationResult(False, 0.0, [])
 
@@ -143,3 +149,52 @@ def evaluate_rate(condition: RateCondition, ctx: EvaluationContext) -> Evaluatio
 
     met = compare(value, condition.operator, condition.value)
     return EvaluationResult(met, value, [])
+
+
+# ============================================================================
+# TRACE CONDITION
+# ============================================================================
+
+def _get_nested_value(obj: Dict[str, Any], path: str) -> Any:
+    """Get a nested value using dot-separated path."""
+    parts = path.split(".")
+    current: Any = obj
+    for part in parts:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def evaluate_trace(condition: TraceCondition, ctx: EvaluationContext) -> EvaluationResult:
+    """Evaluate a trace condition — check durable knowledge state."""
+    matching = [
+        t for t in ctx.traces
+        if t.trail == condition.trail and (condition.key == "*" or t.key == condition.key)
+    ]
+
+    if condition.operator == "exists":
+        return EvaluationResult(len(matching) > 0, float(len(matching)), [])
+
+    if condition.operator == "not_exists":
+        return EvaluationResult(len(matching) == 0, 0.0, [])
+
+    if condition.operator == "value_eq":
+        if not condition.field or condition.expected is None:
+            return EvaluationResult(False, 0.0, [])
+        matched = any(
+            _get_nested_value(t.value, condition.field) == condition.expected
+            for t in matching
+        )
+        return EvaluationResult(matched, 1.0 if matched else 0.0, [])
+
+    if condition.operator == "value_neq":
+        if not condition.field or condition.expected is None:
+            return EvaluationResult(False, 0.0, [])
+        all_neq = len(matching) > 0 and all(
+            _get_nested_value(t.value, condition.field) != condition.expected
+            for t in matching
+        )
+        return EvaluationResult(all_neq, 1.0 if all_neq else 0.0, [])
+
+    return EvaluationResult(False, 0.0, [])

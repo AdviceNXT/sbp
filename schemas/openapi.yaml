@@ -1,11 +1,11 @@
 openapi: "3.1.0"
 info:
   title: Stigmergic Blackboard Protocol (SBP)
-  version: "0.1.0"
+  version: "0.2.0"
   description: |
     REST/JSON-RPC API for the Stigmergic Blackboard Protocol.
     SBP enables decoupled, self-organizing multi-agent coordination through
-    environment-based signaling with decaying pheromones.
+    environment-based signaling with decaying pheromones and durable traces.
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
@@ -149,6 +149,9 @@ components:
             - sbp/deregister_scent
             - sbp/evaporate
             - sbp/inspect
+            - sbp/inscribe
+            - sbp/read
+            - sbp/erase
         params:
           type: object
 
@@ -198,6 +201,8 @@ components:
             -32003: Payload validation failed
             -32004: Rate limited
             -32005: Unauthorized
+            -32007: Trace not found
+            -32008: Trace value too large
         message:
           type: string
         data:
@@ -343,6 +348,7 @@ components:
         - $ref: "#/components/schemas/CompositeCondition"
         - $ref: "#/components/schemas/RateCondition"
         - $ref: "#/components/schemas/PatternCondition"
+        - $ref: "#/components/schemas/TraceCondition"
       discriminator:
         propertyName: type
 
@@ -429,6 +435,27 @@ components:
         ordered:
           type: boolean
           default: true
+
+    TraceCondition:
+      type: object
+      required: [type, trail, key, operator]
+      properties:
+        type:
+          type: string
+          const: trace
+        trail:
+          type: string
+        key:
+          type: string
+          description: Use "*" for wildcard (any key in trail)
+        operator:
+          type: string
+          enum: [exists, not_exists, value_eq, value_neq]
+        field:
+          type: string
+          description: Dot-separated path into trace value
+        expected:
+          description: Expected value for comparison operators
 
     # -- Operation Params --
     EmitParams:
@@ -627,7 +654,7 @@ components:
           type: array
           items:
             type: string
-            enum: [trails, scents, stats]
+            enum: [trails, scents, stats, traces]
 
     InspectResult:
       type: object
@@ -714,3 +741,116 @@ components:
 
 security:
   - ApiKeyAuth: []
+
+    # -- Trace --
+    Trace:
+      type: object
+      required: [id, trail, key, value, created_at, updated_at, version, tags]
+      properties:
+        id:
+          type: string
+        trail:
+          type: string
+        key:
+          type: string
+        value:
+          type: object
+          description: Arbitrary JSON payload (max 1 MB)
+        created_at:
+          type: integer
+        updated_at:
+          type: integer
+        version:
+          type: integer
+        source_agent:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    InscribeParams:
+      type: object
+      required: [trail, key, value]
+      properties:
+        trail:
+          type: string
+          minLength: 1
+        key:
+          type: string
+          minLength: 1
+        value:
+          type: object
+        tags:
+          type: array
+          items:
+            type: string
+        source_agent:
+          type: string
+
+    InscribeResult:
+      type: object
+      required: [trace_id, action, version]
+      properties:
+        trace_id:
+          type: string
+        action:
+          type: string
+          enum: [created, updated]
+        version:
+          type: integer
+
+    ReadParams:
+      type: object
+      properties:
+        trails:
+          type: array
+          items:
+            type: string
+        keys:
+          type: array
+          items:
+            type: string
+        prefix:
+          type: string
+        tags:
+          $ref: "#/components/schemas/TagFilter"
+        limit:
+          type: integer
+          default: 100
+
+    ReadResult:
+      type: object
+      required: [timestamp, traces]
+      properties:
+        timestamp:
+          type: integer
+        traces:
+          type: array
+          items:
+            $ref: "#/components/schemas/Trace"
+
+    EraseParams:
+      type: object
+      properties:
+        trail:
+          type: string
+        keys:
+          type: array
+          items:
+            type: string
+        tags:
+          $ref: "#/components/schemas/TagFilter"
+        older_than_ms:
+          type: integer
+
+    EraseResult:
+      type: object
+      required: [erased_count, trails_affected]
+      properties:
+        erased_count:
+          type: integer
+        trails_affected:
+          type: array
+          items:
+            type: string
