@@ -73,6 +73,25 @@ def compare(a: float, op: str, b: float) -> bool:
     if op == "!=": return a != b
     return False
 
+def should_rearm(
+    condition: ScentCondition,
+    value: float,
+    met: bool,
+    trigger_mode: str,
+    hysteresis: float,
+) -> bool:
+    """Re-arm test for a disarmed edge scent (spec §7.4): the observed value
+    must travel `hysteresis` beyond the threshold, away from the trigger
+    side, before the next edge can fire. Conditions without a numeric
+    threshold degrade to plain edge semantics."""
+    rising = trigger_mode == "edge_rising"
+    if condition.type == "threshold" or condition.type == "rate":
+        if condition.operator in (">=", ">"):
+            return value <= condition.value - hysteresis if rising else value >= condition.value + hysteresis
+        if condition.operator in ("<=", "<"):
+            return value >= condition.value + hysteresis if rising else value <= condition.value - hysteresis
+    return (not met) if rising else met
+
 def evaluate_threshold(condition: ThresholdCondition, ctx: EvaluationContext) -> EvaluationResult:
     matching = []
     for p in ctx.pheromones:

@@ -139,6 +139,7 @@ export interface Scent {
   max_execution_ms: number;
   last_triggered_at: number | null;
   last_condition_met: boolean;
+  armed?: boolean;
   context_trails?: string[];
 }
 

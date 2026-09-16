@@ -650,6 +650,51 @@ describe("Scent Behavior", () => {
 
         bb.stop();
     });
+
+    it("hysteresis keeps an edge scent disarmed until the value clears the band", async () => {
+        let triggerCount = 0;
+
+        bb.registerScent({
+            scent_id: "hysteresis-test",
+            condition: {
+                type: "threshold",
+                trail: "hys",
+                signal_type: "sig",
+                aggregation: "max",
+                operator: ">=",
+                value: 0.5,
+            },
+            trigger_mode: "edge_rising",
+            hysteresis: 0.2,
+            cooldown_ms: 0,
+        });
+
+        bb.onTrigger("hysteresis-test", async () => {
+            triggerCount++;
+        });
+
+        bb.start();
+
+        bb.emit({ trail: "hys", type: "sig", intensity: 0.8, decay: { type: "immortal" }, merge_strategy: "replace" });
+        await new Promise((r) => setTimeout(r, 50));
+        expect(triggerCount).toBe(1);
+
+        // 0.4 is below threshold but inside the 0.2 hysteresis band -- stays disarmed.
+        bb.emit({ trail: "hys", type: "sig", intensity: 0.4, decay: { type: "immortal" }, merge_strategy: "replace" });
+        await new Promise((r) => setTimeout(r, 50));
+        bb.emit({ trail: "hys", type: "sig", intensity: 0.8, decay: { type: "immortal" }, merge_strategy: "replace" });
+        await new Promise((r) => setTimeout(r, 50));
+        expect(triggerCount).toBe(1);
+
+        // 0.2 clears the hysteresis band (<= 0.5 - 0.2) and re-arms the scent.
+        bb.emit({ trail: "hys", type: "sig", intensity: 0.2, decay: { type: "immortal" }, merge_strategy: "replace" });
+        await new Promise((r) => setTimeout(r, 50));
+        bb.emit({ trail: "hys", type: "sig", intensity: 0.8, decay: { type: "immortal" }, merge_strategy: "replace" });
+        await new Promise((r) => setTimeout(r, 50));
+        expect(triggerCount).toBe(2);
+
+        bb.stop();
+    });
 });
 
 // ============================================================================

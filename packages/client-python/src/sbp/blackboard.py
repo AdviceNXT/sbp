@@ -23,7 +23,7 @@ from sbp.types import (
     TRACE_MAX_VALUE_SIZE,
 )
 from sbp.decay import compute_intensity, is_evaporated
-from sbp.evaluator import evaluate_condition, EvaluationContext, match_tags
+from sbp.evaluator import evaluate_condition, EvaluationContext, match_tags, should_rearm
 
 class LocalBlackboard:
     def __init__(self):
@@ -225,6 +225,8 @@ class LocalBlackboard:
             "activation_payload": params.activation_payload,
             "context_trails": params.context_trails,
             "trigger_mode": params.trigger_mode,
+            "hysteresis": params.hysteresis,
+            "armed": True,
             "last_triggered_at": 0,
             "last_condition_met": False
         }
@@ -274,21 +276,39 @@ class LocalBlackboard:
             result = evaluate_condition(scent["condition"], ctx)
             met = result.met
             last_met = scent["last_condition_met"]
+            mode = scent["trigger_mode"]
+            hysteresis = scent.get("hysteresis", 0) or 0
+            edge_mode = mode in ("edge_rising", "edge_falling")
+
+            # Re-arm test (spec §7.4): a fired hysteresis scent stays disarmed until this passes.
+            armed = scent.get("armed", True)
+            if hysteresis > 0 and edge_mode and not armed and should_rearm(
+                scent["condition"], result.value, met, mode, hysteresis
+            ):
+                scent["armed"] = True
+                armed = True
 
             should_trigger = False
-            mode = scent["trigger_mode"]
 
             if mode == "level":
                 should_trigger = met
             elif mode == "edge_rising":
-                should_trigger = met and not last_met
+                if hysteresis > 0:
+                    should_trigger = met and armed
+                else:
+                    should_trigger = met and not last_met
             elif mode == "edge_falling":
-                should_trigger = not met and last_met
+                if hysteresis > 0:
+                    should_trigger = not met and armed
+                else:
+                    should_trigger = not met and last_met
 
             scent["last_condition_met"] = met
 
             if should_trigger:
                 scent["last_triggered_at"] = now
+                if hysteresis > 0 and edge_mode:
+                    scent["armed"] = False
                 await self._dispatch_trigger(scent, result, now)
 
     async def _dispatch_trigger(self, scent: Dict[str, Any], result, now: int):

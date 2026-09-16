@@ -39,7 +39,7 @@ import {
   SbpError,
 } from "./types.js";
 import { computeIntensity, isEvaporated, defaultDecay } from "./decay.js";
-import { evaluateCondition, createSnapshot } from "./conditions.js";
+import { evaluateCondition, createSnapshot, shouldRearm } from "./conditions.js";
 import { createHash } from "crypto";
 
 export interface BlackboardOptions {
@@ -307,6 +307,7 @@ export class Blackboard {
       max_execution_ms,
       last_triggered_at: null,
       last_condition_met: false,
+      armed: true,
       context_trails,
     };
 
@@ -515,7 +516,7 @@ export class Blackboard {
         traces: [...this.traceStore.values()],
       });
 
-      const shouldTrigger = this.shouldTrigger(scent, evalResult.met, now);
+      const shouldTrigger = this.shouldTrigger(scent, evalResult.met, evalResult.value, now);
       scent.last_condition_met = evalResult.met;
 
       if (shouldTrigger) {
@@ -528,20 +529,37 @@ export class Blackboard {
   /**
    * Determine if a scent should trigger based on mode
    */
-  private shouldTrigger(scent: Scent, conditionMet: boolean, _now: number): boolean {
+  private shouldTrigger(scent: Scent, conditionMet: boolean, value: number, _now: number): boolean {
+    const hysteresis = scent.hysteresis || 0;
+    const edgeMode = scent.trigger_mode === "edge_rising" || scent.trigger_mode === "edge_falling";
+
+    // Re-arm (spec §7.4): a fired hysteresis scent stays disarmed until this passes.
+    if (hysteresis > 0 && edgeMode && scent.armed === false) {
+      if (shouldRearm(scent.condition, value, conditionMet, scent.trigger_mode, hysteresis)) {
+        scent.armed = true;
+      }
+    }
+    const armed = scent.armed !== false;
+
+    let trigger: boolean;
     switch (scent.trigger_mode) {
       case "level":
-        return conditionMet;
-
+        trigger = conditionMet;
+        break;
       case "edge_rising":
-        return conditionMet && !scent.last_condition_met;
-
+        trigger = hysteresis > 0 ? conditionMet && armed : conditionMet && !scent.last_condition_met;
+        break;
       case "edge_falling":
-        return !conditionMet && scent.last_condition_met;
-
+        trigger = hysteresis > 0 ? !conditionMet && armed : !conditionMet && scent.last_condition_met;
+        break;
       default:
-        return conditionMet;
+        trigger = conditionMet;
     }
+
+    if (trigger && hysteresis > 0 && edgeMode) {
+      scent.armed = false;
+    }
+    return trigger;
   }
 
   /**

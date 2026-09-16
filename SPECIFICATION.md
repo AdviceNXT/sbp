@@ -701,6 +701,12 @@ Optional edge-triggering mode:
 }
 ```
 
+When `hysteresis` is set on an edge-triggered scent, implementations MUST disarm the scent after it
+fires and MUST NOT re-arm it until the condition's observed value travels `hysteresis` past the
+threshold on the side opposite the trigger direction (e.g. for `edge_rising` with `operator: ">="`,
+the value must fall to `value - hysteresis` before the scent can fire again). This prevents rapid
+re-triggering from noise oscillating right at the threshold.
+
 ### 7.5 Trace Conditions
 
 Scent conditions MAY reference trace state in addition to pheromone state. This enables cross-layer triggers that combine real-time signals with durable knowledge.
