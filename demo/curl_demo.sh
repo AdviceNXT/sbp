@@ -83,7 +83,7 @@ curl -s -X POST "$BASE_URL/sbp" \
     "method": "sbp/register_scent",
     "params": {
       "scent_id": "high-activity",
-      "agent_endpoint": "http://localhost:8080/webhook",
+      "agent_endpoint": "sse://demo-agent",
       "condition": {
         "type": "threshold",
         "trail": "demo.signals",

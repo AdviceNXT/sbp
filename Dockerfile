@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY packages/server/src/ packages/server/src/
 RUN cd packages/server && npm install && npm run build
 
 # --- Production stage ---
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 

@@ -126,7 +126,7 @@ export const EmitParamsSchema = z.object({
   type: z.string().min(1, "Type must be a non-empty string"),
   intensity: z.number().min(0).max(1, "Intensity must be between 0 and 1"),
   decay: DecayModelSchema.optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   tags: z.array(z.string()).optional(),
   merge_strategy: z.enum(["reinforce", "replace", "max", "add", "new"]).optional(),
   source_agent: z.string().optional(),
@@ -142,12 +142,24 @@ export const SniffParamsSchema = z.object({
   include_evaporated: z.boolean().optional(),
 });
 
+/**
+ * Triggers reach agents over SSE only. An endpoint is either empty or an
+ * `sse://` label, so the server never calls out to an address a client chose.
+ */
+export function isSseEndpoint(endpoint: string): boolean {
+  return endpoint === "" || /^sse:\/\//i.test(endpoint);
+}
+
 export const RegisterScentParamsSchema = z.object({
   scent_id: z.string().min(1, "Scent ID must be a non-empty string"),
-  agent_endpoint: z.string().optional().default(""),
+  agent_endpoint: z
+    .string()
+    .refine(isSseEndpoint, "Webhook delivery isn't supported: use an sse:// endpoint or leave it empty")
+    .optional()
+    .default(""),
   condition: ScentConditionSchema,
   cooldown_ms: z.number().int().nonnegative().optional(),
-  activation_payload: z.record(z.unknown()).optional(),
+  activation_payload: z.record(z.string(), z.unknown()).optional(),
   trigger_mode: z.enum(["level", "edge_rising", "edge_falling"]).optional(),
   hysteresis: z.number().nonnegative().optional(),
   max_execution_ms: z.number().positive().optional(),
@@ -177,7 +189,7 @@ export const InspectParamsSchema = z.object({
 export const InscribeParamsSchema = z.object({
   trail: z.string().min(1, "Trail must be a non-empty string"),
   key: z.string().min(1, "Key must be a non-empty string"),
-  value: z.record(z.unknown()),
+  value: z.record(z.string(), z.unknown()),
   tags: z.array(z.string()).optional(),
   source_agent: z.string().optional(),
 });
@@ -270,11 +282,11 @@ export function validateParams(
   method: string,
   params: unknown
 ): { ok: true; params: unknown } | { ok: false; error: ValidationError } {
-  const schema = METHOD_SCHEMAS[method];
-  if (!schema) {
+  if (!Object.hasOwn(METHOD_SCHEMAS, method)) {
     // Unknown methods are handled by the RPC router, not here
     return { ok: true, params };
   }
+  const schema = METHOD_SCHEMAS[method];
 
   const result = schema.safeParse(params);
   if (!result.success) {

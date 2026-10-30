@@ -59,7 +59,7 @@ from sbp.conditions import (
     with_cooldown_guard,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = [
     # Client
     "SbpClient",

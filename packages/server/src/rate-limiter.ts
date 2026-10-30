@@ -1,6 +1,6 @@
 /**
  * SBP Rate Limiting Middleware
- * Token bucket rate limiter per agent ID
+ * Token bucket rate limiter per API key or client address
  */
 
 import type { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from "fastify";
@@ -12,6 +12,10 @@ export interface RateLimitOptions {
     windowMs?: number;
     /** Maximum scent registrations per agent (default: 100) */
     maxScentRegistrations?: number;
+    /** Maximum clients tracked at once; the least recently seen is dropped (default: 10000) */
+    maxBuckets?: number;
+    /** Key on the API key, which the auth hook has already verified. Otherwise key on the client address. */
+    keyByApiKey?: boolean;
 }
 
 interface TokenBucket {
@@ -22,12 +26,15 @@ interface TokenBucket {
 /**
  * Create a Fastify onRequest hook for rate limiting.
  *
- * Uses a token bucket algorithm per agent ID (from `Sbp-Agent-Id` header).
+ * Uses a token bucket algorithm. The key never comes from a header the client
+ * can change freely, or a client could get a fresh bucket on every request.
  * Returns JSON-RPC error code -32004 (RATE_LIMITED) when the limit is exceeded.
  */
 export function createRateLimitHook(options: RateLimitOptions = {}) {
     const maxRequests = options.maxRequests ?? 1000;
     const windowMs = options.windowMs ?? 60000;
+    const maxBuckets = options.maxBuckets ?? 10000;
+    const keyByApiKey = options.keyByApiKey ?? false;
     const buckets = new Map<string, TokenBucket>();
 
     // Periodic cleanup of stale buckets (every 5 minutes)
@@ -57,16 +64,17 @@ export function createRateLimitHook(options: RateLimitOptions = {}) {
             return;
         }
 
-        // Identify the agent
-        const agentId = (request.headers["sbp-agent-id"] as string) || request.ip || "anonymous";
+        const apiKey = keyByApiKey ? request.headers.authorization?.split(" ")[1] : undefined;
+        const clientKey = apiKey ? `key:${apiKey}` : `ip:${request.ip}`;
 
-        // Get or create token bucket
+        // Get or create token bucket, keeping the map in least-recently-seen order
         const now = Date.now();
-        let bucket = buckets.get(agentId);
+        const bucket = buckets.get(clientKey) ?? { tokens: maxRequests, lastRefill: now };
+        buckets.delete(clientKey);
+        buckets.set(clientKey, bucket);
 
-        if (!bucket) {
-            bucket = { tokens: maxRequests, lastRefill: now };
-            buckets.set(agentId, bucket);
+        if (buckets.size > maxBuckets) {
+            buckets.delete(buckets.keys().next().value as string);
         }
 
         // Refill tokens based on elapsed time

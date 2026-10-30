@@ -7,6 +7,7 @@
 
 import { Blackboard } from "../src/blackboard.js";
 import { MemoryStore } from "../src/store.js";
+import { evaluateCondition } from "../src/conditions.js";
 
 // ============================================================================
 // HELPERS
@@ -121,7 +122,7 @@ function benchConditionEvaluation(): void {
     // Register a composite scent
     bb.registerScent({
         scent_id: "bench-scent",
-        agent_endpoint: "http://localhost:9999",
+        agent_endpoint: "sse://bench-agent",
         condition: {
             type: "composite",
             operator: "and",
@@ -151,7 +152,6 @@ function benchConditionEvaluation(): void {
     runBench("evaluateScents (sync part)", () => {
         // Evaluate without triggering (cooldown = 0 means it fires and resets)
         const pheromones = [...(bb as any).store.values()];
-        const { evaluateCondition } = require("../src/conditions.js");
         evaluateCondition(
             {
                 type: "composite",

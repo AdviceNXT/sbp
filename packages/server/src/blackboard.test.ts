@@ -130,7 +130,7 @@ describe("Blackboard", () => {
     it("should register a new scent", () => {
       const result = bb.registerScent({
         scent_id: "test-scent",
-        agent_endpoint: "http://localhost:8080",
+        agent_endpoint: "sse://test",
         condition: {
           type: "threshold",
           trail: "test",
@@ -148,7 +148,7 @@ describe("Blackboard", () => {
     it("should update existing scent", () => {
       bb.registerScent({
         scent_id: "test-scent",
-        agent_endpoint: "http://localhost:8080",
+        agent_endpoint: "sse://test",
         condition: {
           type: "threshold",
           trail: "test",
@@ -161,7 +161,7 @@ describe("Blackboard", () => {
 
       const result = bb.registerScent({
         scent_id: "test-scent",
-        agent_endpoint: "http://localhost:9090",
+        agent_endpoint: "sse://test",
         condition: {
           type: "threshold",
           trail: "test",
@@ -180,7 +180,7 @@ describe("Blackboard", () => {
 
       const result = bb.registerScent({
         scent_id: "test-scent",
-        agent_endpoint: "http://localhost:8080",
+        agent_endpoint: "sse://test",
         condition: {
           type: "threshold",
           trail: "test",
@@ -199,7 +199,7 @@ describe("Blackboard", () => {
     it("should deregister existing scent", () => {
       bb.registerScent({
         scent_id: "test-scent",
-        agent_endpoint: "http://localhost:8080",
+        agent_endpoint: "sse://test",
         condition: {
           type: "threshold",
           trail: "test",
@@ -265,7 +265,7 @@ describe("Blackboard", () => {
       bb.emit({ trail: "test", type: "event", intensity: 0.5 });
       bb.registerScent({
         scent_id: "s1",
-        agent_endpoint: "http://localhost",
+        agent_endpoint: "sse://test",
         condition: { type: "threshold", trail: "test", signal_type: "event", aggregation: "max", operator: ">=", value: 0.1 },
       });
 

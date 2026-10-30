@@ -8,22 +8,36 @@ import { SbpServer } from "./server.js";
 
 const args = process.argv.slice(2);
 
+const KNOWN_FLAGS = new Set(["port", "host", "log", "api-key", "rate-limit", "help"]);
+
+function refuseToStart(message: string): never {
+  console.error(`[SBP] ${message} Refusing to start.`);
+  process.exit(1);
+}
+
 function parseArgs(args: string[]): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (!arg.startsWith("--")) {
+      refuseToStart(`Unexpected argument: ${arg}.`);
+    }
 
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2);
-      const next = args[i + 1];
+    const separator = arg.indexOf("=");
+    const key = separator === -1 ? arg.slice(2) : arg.slice(2, separator);
+    if (!KNOWN_FLAGS.has(key)) {
+      refuseToStart(`Unknown flag: --${key}.`);
+    }
 
-      if (next && !next.startsWith("--")) {
-        result[key] = next;
-        i++;
-      } else {
-        result[key] = true;
-      }
+    const next = args[i + 1];
+    if (separator !== -1) {
+      result[key] = arg.slice(separator + 1);
+    } else if (next !== undefined && !next.startsWith("--")) {
+      result[key] = next;
+      i++;
+    } else {
+      result[key] = true;
     }
   }
 
@@ -42,7 +56,7 @@ Options:
   --host <string>       Host to bind to (default: localhost)
   --log                 Enable request logging
   --api-key <keys>      Comma-separated API keys for authentication
-  --rate-limit <n>      Max requests per minute per agent (default: off)
+  --rate-limit <n>      Max requests per minute per API key or address (default: off)
   --help                Show this help message
 
 Transport:
@@ -72,16 +86,30 @@ async function main(): Promise<void> {
   }
 
   // Parse API keys from CLI arg or env variable
-  const apiKeyArg = (options["api-key"] as string) || process.env.SBP_API_KEYS || "";
-  const apiKeys = apiKeyArg
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
+  const apiKeyFlag = options["api-key"];
+  const apiKeyArg = apiKeyFlag === undefined ? process.env.SBP_API_KEYS : apiKeyFlag;
+  const keysRequested = apiKeyArg !== undefined;
+  const apiKeys =
+    typeof apiKeyArg === "string"
+      ? apiKeyArg
+          .split(",")
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : [];
+
+  if (keysRequested && apiKeys.length === 0) {
+    refuseToStart("API keys were requested but none were given.");
+  }
 
   // Parse rate limit
-  const rateLimitMax = options["rate-limit"]
-    ? parseInt(options["rate-limit"] as string, 10)
-    : undefined;
+  const rateLimitArg = options["rate-limit"];
+  let rateLimitMax: number | undefined;
+  if (rateLimitArg !== undefined) {
+    rateLimitMax = typeof rateLimitArg === "string" ? Number(rateLimitArg) : NaN;
+    if (!Number.isInteger(rateLimitMax) || rateLimitMax < 1) {
+      refuseToStart("--rate-limit must be a positive whole number.");
+    }
+  }
 
   const server = new SbpServer({
     port: options.port ? parseInt(options.port as string, 10) : 3000,
