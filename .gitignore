@@ -36,3 +36,4 @@ htmlcov/
 
 # Package locks (keep package-lock.json for npm)
 # poetry.lock
+RELEASE_NOTES.md

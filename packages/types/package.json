@@ -17,6 +17,7 @@
     ],
     "scripts": {
         "build": "tsc",
+        "test": "tsc --noEmit",
         "clean": "rimraf dist"
     },
     "keywords": [
