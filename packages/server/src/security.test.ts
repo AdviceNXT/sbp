@@ -201,13 +201,13 @@ describe("authentication fails closed", () => {
         await server.stop();
     });
 
-    function cliEnv(extra: Record<string, string>) {
+    function cliEnv(extra: Record<string, string | undefined>) {
         const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
         if (!("SBP_API_KEYS" in extra)) delete env.SBP_API_KEYS;
         return env;
     }
 
-    function runCli(args: string[], env: Record<string, string> = {}) {
+    function runCli(args: string[], env: Record<string, string | undefined> = {}) {
         return spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], {
             encoding: "utf8",
             timeout: 20000,
@@ -361,7 +361,9 @@ describe("webhook delivery is refused", () => {
         await server.stop();
         fetchSpy.mockRestore();
     });
-    afterEach(() => fetchSpy.mockClear());
+    afterEach(() => {
+        fetchSpy.mockClear();
+    });
 
     const endpoints = [
         "http://169.254.169.254/latest/meta-data",

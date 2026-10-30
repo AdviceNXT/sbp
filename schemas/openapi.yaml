@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Stigmergic Blackboard Protocol (SBP)
-  version: "0.2.0"
+  version: "0.2.1"
   description: |
     REST/JSON-RPC API for the Stigmergic Blackboard Protocol.
     SBP enables decoupled, self-organizing multi-agent coordination through
@@ -64,7 +64,7 @@ paths:
                   method: "sbp/register_scent"
                   params:
                     scent_id: "volatility-watcher"
-                    agent_endpoint: "https://agents.example.com/handler"
+                    agent_endpoint: "sse://volatility-agent"
                     condition:
                       type: "threshold"
                       trail: "market.signals"
@@ -122,10 +122,9 @@ paths:
 
 components:
   securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
 
   schemas:
     # -- JSON-RPC Envelope --
@@ -554,13 +553,13 @@ components:
 
     RegisterScentParams:
       type: object
-      required: [scent_id, agent_endpoint, condition]
+      required: [scent_id, condition]
       properties:
         scent_id:
           type: string
         agent_endpoint:
           type: string
-          format: uri
+          description: Empty, or an sse:// label. The reference server refuses anything else.
         condition:
           $ref: "#/components/schemas/ScentCondition"
         cooldown_ms:
@@ -739,9 +738,6 @@ components:
         activation_payload:
           type: object
 
-security:
-  - ApiKeyAuth: []
-
     # -- Trace --
     Trace:
       type: object
@@ -854,3 +850,6 @@ security:
           type: array
           items:
             type: string
+
+security:
+  - BearerAuth: []

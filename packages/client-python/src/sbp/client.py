@@ -7,36 +7,35 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, Callable, Awaitable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
+from sbp.blackboard import LocalBlackboard, get_shared_blackboard
 from sbp.types import (
     DecayModel,
-    EmitResult,
-    SniffParams,
-    SniffResult,
-    RegisterScentParams,
-    RegisterScentResult,
     DeregisterScentResult,
-    EvaporateParams,
-    EvaporateResult,
-    InspectResult,
-    TriggerPayload,
-    JsonRpcRequest,
-    JsonRpcResponse,
-    ScentCondition,
     EmitParams,
-    DeregisterScentParams,
-    InspectParams,
-    InscribeResult,
-    ReadParams,
-    ReadResult,
+    EmitResult,
     EraseParams,
     EraseResult,
-    Trace,
+    EvaporateParams,
+    EvaporateResult,
+    InscribeResult,
+    InspectParams,
+    InspectResult,
+    JsonRpcRequest,
+    JsonRpcResponse,
+    ReadParams,
+    ReadResult,
+    RegisterScentParams,
+    RegisterScentResult,
+    ScentCondition,
+    SniffParams,
+    SniffResult,
+    TriggerPayload,
 )
-from sbp.blackboard import LocalBlackboard, get_shared_blackboard
 
 
 class SbpError(Exception):
@@ -76,11 +75,11 @@ class AsyncSbpClient:
         self._last_event_id: str | None = None
 
         # Local mode
-        self._local_blackboard: Optional[LocalBlackboard] = None
+        self._local_blackboard: LocalBlackboard | None = None
         if local:
             self._local_blackboard = get_shared_blackboard()
 
-    async def __aenter__(self) -> "AsyncSbpClient":
+    async def __aenter__(self) -> AsyncSbpClient:
         await self.connect()
         return self
 
@@ -138,7 +137,8 @@ class AsyncSbpClient:
             elif method == "sbp/sniff":
                 return self._local_blackboard.sniff(SniffParams(**params)).model_dump()
             elif method == "sbp/register_scent":
-                return self._local_blackboard.register_scent(RegisterScentParams(**params)).model_dump()
+                result = self._local_blackboard.register_scent(RegisterScentParams(**params))
+                return result.model_dump()
             elif method == "sbp/deregister_scent":
                 return self._local_blackboard.deregister_scent(params["scent_id"]).model_dump()
             elif method == "sbp/evaporate":
@@ -631,7 +631,7 @@ class SbpClient:
             self._async_client.erase(trail, keys, older_than_ms=older_than_ms)
         )
 
-    def __enter__(self) -> "SbpClient":
+    def __enter__(self) -> SbpClient:
         self.connect()
         return self
 

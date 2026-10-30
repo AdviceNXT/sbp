@@ -6,21 +6,20 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from sbp.client import AsyncSbpClient
 from sbp.types import (
-    ScentCondition,
-    ThresholdCondition,
-    CompositeCondition,
-    TraceCondition,
-    TriggerPayload,
     DecayModel,
+    EraseResult,
     ExponentialDecay,
     InscribeResult,
     ReadResult,
-    EraseResult,
+    ScentCondition,
+    ThresholdCondition,
+    TriggerPayload,
 )
 
 
@@ -34,6 +33,9 @@ class ScentRegistration:
     cooldown_ms: int = 0
     activation_payload: dict[str, Any] = field(default_factory=dict)
     context_trails: list[str] | None = None
+
+
+TriggerHandler = Callable[[TriggerPayload], Awaitable[None]]
 
 
 class SbpAgent:
@@ -86,7 +88,7 @@ class SbpAgent:
         cooldown_ms: int = 0,
         activation_payload: dict[str, Any] | None = None,
         context_trails: list[str] | None = None,
-    ) -> Callable[[Callable[[TriggerPayload], Awaitable[None]]], Callable[[TriggerPayload], Awaitable[None]]]:
+    ) -> Callable[[TriggerHandler], TriggerHandler]:
         """
         Decorator to register a handler for a scent condition.
 
@@ -124,7 +126,7 @@ class SbpAgent:
         operator: str = ">=",
         value: float,
         cooldown_ms: int = 0,
-    ) -> Callable[[Callable[[TriggerPayload], Awaitable[None]]], Callable[[TriggerPayload], Awaitable[None]]]:
+    ) -> Callable[[TriggerHandler], TriggerHandler]:
         """
         Simplified decorator for simple threshold conditions.
 

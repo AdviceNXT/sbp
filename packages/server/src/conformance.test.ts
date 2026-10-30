@@ -579,6 +579,7 @@ describe("Scent Behavior", () => {
 
         bb.registerScent({
             scent_id: "cooldown-test",
+            agent_endpoint: "sse://test",
             condition: {
                 type: "threshold",
                 trail: "cd",
@@ -617,6 +618,7 @@ describe("Scent Behavior", () => {
 
         bb.registerScent({
             scent_id: "edge-test",
+            agent_endpoint: "sse://test",
             condition: {
                 type: "threshold",
                 trail: "edge",

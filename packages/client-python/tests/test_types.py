@@ -2,12 +2,10 @@
 SBP Client Tests
 """
 
-import pytest
 from sbp.types import (
-    ExponentialDecay,
-    LinearDecay,
-    ThresholdCondition,
     CompositeCondition,
+    ExponentialDecay,
+    ThresholdCondition,
     exponential_decay,
     linear_decay,
 )
@@ -70,15 +68,21 @@ class TestConditions:
         inner = CompositeCondition(
             operator="or",
             conditions=[
-                ThresholdCondition(trail="a", signal_type="x", aggregation="any", operator=">=", value=0),
-                ThresholdCondition(trail="b", signal_type="y", aggregation="any", operator=">=", value=0),
+                ThresholdCondition(
+                    trail="a", signal_type="x", aggregation="any", operator=">=", value=0
+                ),
+                ThresholdCondition(
+                    trail="b", signal_type="y", aggregation="any", operator=">=", value=0
+                ),
             ],
         )
         outer = CompositeCondition(
             operator="and",
             conditions=[
                 inner,
-                ThresholdCondition(trail="c", signal_type="z", aggregation="max", operator=">=", value=0.5),
+                ThresholdCondition(
+                    trail="c", signal_type="z", aggregation="max", operator=">=", value=0.5
+                ),
             ],
         )
         assert outer.conditions[0].type == "composite"  # type: ignore
@@ -102,7 +106,9 @@ class TestSerialization:
         composite = CompositeCondition(
             operator="and",
             conditions=[
-                ThresholdCondition(trail="a", signal_type="x", aggregation="max", operator=">=", value=0.5),
+                ThresholdCondition(
+                    trail="a", signal_type="x", aggregation="max", operator=">=", value=0.5
+                ),
             ],
         )
         data = composite.model_dump()

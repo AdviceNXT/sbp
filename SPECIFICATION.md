@@ -456,6 +456,8 @@ interface PatternCondition {
 }
 ```
 
+**Note on the reference server.** This section describes webhook delivery through `agent_endpoint`. From 0.2.1, the reference server doesn't implement it, so that the server never calls an address a client chose. It delivers triggers over SSE only, and refuses any `agent_endpoint` that isn't empty or an `sse://` value.
+
 ### 5.4 TRIGGER (Environment → Agent)
 
 When a scent condition is met, the blackboard sends a trigger to the registered agent.

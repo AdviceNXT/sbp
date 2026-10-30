@@ -2,8 +2,9 @@
 Decay computation utilities
 """
 import math
-from typing import Optional
-from sbp.types import DecayModel, Pheromone
+
+from sbp.types import Pheromone
+
 
 def compute_intensity(pheromone: Pheromone, now: int) -> float:
     """Compute the current intensity of a pheromone after decay"""
