@@ -44,9 +44,11 @@ The exact numbers vary a little, because signals decay in real time. That runs a
 | **Trails** | Shared namespaces, such as `service.errors`. |
 | **Scents** | Rules like "wake me when the total signal is at least 1.5 and no maintenance record exists". |
 
-There are eight operations: `emit`, `sniff`, `register_scent`, `deregister_scent` and `evaporate` for signals and rules, `inscribe`, `read` and `erase` for traces. The server delivers triggers to agents over SSE. [SPECIFICATION.md](SPECIFICATION.md) has the protocol, and [QUICK_REFERENCE.md](QUICK_REFERENCE.md) a summary.
+There are nine operations: `emit`, `sniff`, `register_scent`, `deregister_scent` and `evaporate` for signals and rules, `inscribe`, `read` and `erase` for traces, and `inspect` for the board's state. The server delivers triggers to agents over SSE. [SPECIFICATION.md](SPECIFICATION.md) has the protocol, and [QUICK_REFERENCE.md](QUICK_REFERENCE.md) a summary.
 
 ## Use the packages
+
+The current release is **0.2.1**, a security fix for the server ([GHSA-f8ff-w65x-9vhr](https://github.com/AdviceNXT/sbp/security/advisories/GHSA-f8ff-w65x-9vhr)). If you run 0.2.0 or earlier, upgrade. 0.2.1 needs Node 22 or later, accepts only an empty or `sse://` `agent_endpoint`, and turns CORS off by default. [CHANGELOG.md](CHANGELOG.md) lists every change.
 
 ```bash
 npm install @advicenxt/sbp-server @advicenxt/sbp-client

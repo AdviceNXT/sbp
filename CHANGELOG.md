@@ -14,8 +14,8 @@ Security fix for `@advicenxt/sbp-server`. Everyone running the server should upg
 These change what the server accepts:
 
 - `agent_endpoint` must be empty or an `sse://` value. Any other value is refused with `-32602`, and the server no longer delivers triggers by webhook. This differs from `SPECIFICATION.md`, section 5.3.
-- CORS is off by default, and a request with an `Origin` header is refused with HTTP 403. Set the `cors` option to allow browser clients from any origin.
-- A server with `requireAuth` and no `apiKeys`, or with a blank key, refuses to start. An empty `traceWriteKeys` now means no key can write traces.
+- CORS is off by default, and a request with an `Origin` header is refused with HTTP 403. Set the `cors` option to allow browser clients from any origin. The CLI has no `--cors` flag: 0.2.0 ignored it, and 0.2.1 refuses to start with it.
+- A server with `requireAuth` and no `apiKeys`, or with a blank key, refuses to start. With `requireAuth` on, an empty `traceWriteKeys` now means no key can write traces.
 - The CLI takes `--flag=value`, and refuses unknown flags, an `--api-key` or `SBP_API_KEYS` that is set but holds no keys, and a `--rate-limit` that isn't a positive whole number.
 - On a server bound to a loopback address with `cors` off, a request whose `Host` isn't a loopback name is refused with HTTP 403.
 - `/rpc` and the REST routes use the same validators and permission checks as `POST /sbp`. A malformed REST request gets HTTP 400.
