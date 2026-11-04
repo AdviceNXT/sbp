@@ -40,3 +40,7 @@ RELEASE_NOTES.md
 
 # Python: the SDK has no committed lockfile yet
 uv.lock
+
+# Local only
+.pypirc
+docs/

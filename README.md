@@ -97,7 +97,6 @@ packages/client-ts/                 TypeScript SDK
 packages/client-python/             Python SDK
 demo/                               the demo above, and a curl walkthrough
 examples/                           a single-file Python reference
-docs/adr/                           why it's built this way
 ```
 
 ## License
