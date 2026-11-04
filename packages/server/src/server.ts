@@ -529,7 +529,7 @@ export class SbpServer {
   }
 
   async stop(): Promise<void> {
-    this.blackboard.stop();
+    await this.blackboard.stop();
 
     // Close all SSE connections
     for (const client of this.sseClients.values()) {

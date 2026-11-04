@@ -406,4 +406,46 @@ describe("Blackboard", () => {
       expect(result.stats!.total_traces).toBe(1);
     });
   });
+
+  describe("concurrent trigger dispatch", () => {
+    it("a blocked handler does not delay another scent's dispatch", async () => {
+      let fastFired = false;
+      let unblock: () => void = () => {};
+      const neverUnblock = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+
+      bb.registerScent({
+        scent_id: "slow",
+        agent_endpoint: "http://localhost/slow",
+        condition: { type: "threshold", trail: "a", signal_type: "e", aggregation: "max", operator: ">=", value: 0.5 },
+      });
+      bb.onTrigger("slow", async () => {
+        await neverUnblock;
+      });
+
+      bb.registerScent({
+        scent_id: "fast",
+        agent_endpoint: "http://localhost/fast",
+        condition: { type: "threshold", trail: "b", signal_type: "e", aggregation: "max", operator: ">=", value: 0.5 },
+      });
+      bb.onTrigger("fast", async () => {
+        fastFired = true;
+      });
+
+      bb.emit({ trail: "a", type: "e", intensity: 0.9, decay: { type: "immortal" } });
+      bb.emit({ trail: "b", type: "e", intensity: 0.9, decay: { type: "immortal" } });
+
+      // Sequential dispatch would hang here awaiting the slow handler before
+      // the fast one ever ran; fire-and-forget lets this resolve immediately.
+      await bb.evaluateScents();
+
+      // Give the fast handler's own microtask a moment to run.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(fastFired).toBe(true);
+
+      unblock();
+      await bb.stop();
+    });
+  });
 });
