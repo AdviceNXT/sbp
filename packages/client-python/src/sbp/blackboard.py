@@ -53,6 +53,7 @@ class LocalBlackboard:
         # Background task
         self._running = False
         self._task = None
+        self._dispatch_tasks: Set[asyncio.Task] = set()
 
     def _trace_key(self, trail: str, key: str) -> str:
         return f"{trail}\0{key}"
@@ -71,6 +72,8 @@ class LocalBlackboard:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        if self._dispatch_tasks:
+            await asyncio.gather(*self._dispatch_tasks, return_exceptions=True)
 
     async def _loop(self):
         while self._running:
@@ -304,7 +307,11 @@ class LocalBlackboard:
 
             if should_trigger:
                 scent["last_triggered_at"] = now
-                await self._dispatch_trigger(scent, result, now)
+                # Fire-and-forget: a slow/blocked handler for this scent must not
+                # delay trigger delivery to other scents in this loop.
+                task = asyncio.create_task(self._dispatch_trigger(scent, result, now))
+                self._dispatch_tasks.add(task)
+                task.add_done_callback(self._dispatch_tasks.discard)
 
     async def _dispatch_trigger(self, scent: dict[str, Any], result, now: int):
         # Build context

@@ -673,6 +673,9 @@ The blackboard continuously evaluates registered scent conditions. Evaluation SH
 - On every EMIT that could affect a registered condition
 - Periodically (implementation-defined, recommended 100ms minimum)
 
+Implementations MUST dispatch triggers for different scents concurrently; a slow or blocked
+handler for one scent MUST NOT delay trigger delivery to another.
+
 ### 7.2 Cooldown
 
 After triggering, a scent MUST enter cooldown for `cooldown_ms`. During cooldown:
