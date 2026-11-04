@@ -76,6 +76,7 @@ echo ""
 # 5. Register a scent
 echo "5. Register a scent (trigger condition)"
 curl -s -X POST "$BASE_URL/sbp" \
+  -H "Sbp-Session-Id: demo-session" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -83,7 +84,7 @@ curl -s -X POST "$BASE_URL/sbp" \
     "method": "sbp/register_scent",
     "params": {
       "scent_id": "high-activity",
-      "agent_endpoint": "http://localhost:8080/webhook",
+      "agent_endpoint": "sse://demo-agent",
       "condition": {
         "type": "threshold",
         "trail": "demo.signals",
@@ -117,5 +118,6 @@ echo "   (Open another terminal and emit signals to see triggers)"
 echo ""
 echo "   Listening for events..."
 curl -N -s "$BASE_URL/sbp" \
+  -H "Sbp-Session-Id: demo-session" \
   -H "Accept: text/event-stream" \
   -H "Sbp-Protocol-Version: 0.1"

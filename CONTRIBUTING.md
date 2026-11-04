@@ -6,26 +6,15 @@ Thank you for your interest in contributing to the Stigmergic Blackboard Protoco
 
 ```bash
 # Clone the repo
-git clone https://github.com/sbp-protocol/sbp.git
+git clone https://github.com/AdviceNXT/sbp.git
 cd sbp
 
-# Install all dependencies
-npm install
-
-# Build all packages
-npm run build
-
-# Run tests
-npm test
+# Install everything, then run lint, types, tests and the OpenAPI check
+npm ci
+npm run check
 ```
 
-### Python Client
-
-```bash
-cd packages/client-python
-pip install -e ".[dev]"
-pytest
-```
+`npm run check` needs Node 22 or later and [uv](https://docs.astral.sh/uv/). Python type checking isn't included yet, because mypy isn't clean.
 
 ## Project Structure
 
@@ -33,9 +22,11 @@ pytest
 sbp/
 ├── packages/
 │   ├── server/          # @advicenxt/sbp-server - TypeScript server
+│   ├── types/           # @advicenxt/sbp-types - shared TypeScript types
 │   ├── client-ts/       # @advicenxt/sbp-client - TypeScript client
 │   └── client-python/   # sbp-client - Python client
-├── schemas/             # JSON Schema
+├── demo/                # npm run demo, and a curl walkthrough
+├── schemas/             # OpenAPI and JSON Schema
 └── SPECIFICATION.md     # Protocol specification
 ```
 
@@ -44,7 +35,7 @@ sbp/
 1. **Fork** the repository
 2. **Create a branch** for your feature (`git checkout -b feature/amazing-feature`)
 3. **Make your changes**
-4. **Run tests** to ensure nothing is broken
+4. **Run `npm run check`** to ensure nothing is broken
 5. **Commit** with a clear message
 6. **Push** to your fork
 7. **Open a Pull Request**

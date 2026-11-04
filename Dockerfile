@@ -1,26 +1,28 @@
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Copy root package files
-COPY package.json package-lock.json* ./
-
-# Copy server package
+# Copy what a locked workspace install needs
+COPY package.json package-lock.json ./
+COPY packages/types/package.json packages/types/
+COPY packages/client-ts/package.json packages/client-ts/
 COPY packages/server/package.json packages/server/
 COPY packages/server/tsconfig.json packages/server/
 COPY packages/server/src/ packages/server/src/
 
-# Install and build
-RUN cd packages/server && npm install && npm run build
+# Install, build, then drop what only the build needs
+RUN npm ci --workspace=@advicenxt/sbp-server
+RUN npm run build --workspace=@advicenxt/sbp-server
+RUN npm prune --omit=dev --workspace=@advicenxt/sbp-server
 
 # --- Production stage ---
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 
 COPY --from=builder /app/packages/server/dist/ ./dist/
 COPY --from=builder /app/packages/server/package.json ./
-COPY --from=builder /app/packages/server/node_modules/ ./node_modules/
+COPY --from=builder /app/node_modules/ ./node_modules/
 
 EXPOSE 3000
 

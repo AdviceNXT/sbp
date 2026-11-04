@@ -29,7 +29,7 @@ export interface ServerOptions extends BlackboardOptions {
   port?: number;
   /** Host to bind to (default: localhost) */
   host?: string;
-  /** Enable CORS (default: true) */
+  /** Allow browser pages on any origin to call this server (default: false) */
   cors?: boolean;
   /** Request logging (default: false) */
   logging?: boolean;
@@ -37,6 +37,22 @@ export interface ServerOptions extends BlackboardOptions {
   auth?: AuthOptions;
   /** Rate limiting options */
   rateLimit?: RateLimitOptions;
+}
+
+function isLoopbackHost(host: string): boolean {
+  // A bound IPv6 address may carry a zone (::1%lo0), which URL doesn't accept
+  const literal = host.includes(":") && !host.startsWith("[") ? `[${host.split("%")[0]}]` : host;
+  if (!URL.canParse(`http://${literal}`)) return false;
+
+  // URL normalizes case and every spelling of an IP address
+  const name = new URL(`http://${literal}`).hostname.replace(/\.$/, "");
+  return (
+    name === "localhost" ||
+    name.endsWith(".localhost") ||
+    name === "[::1]" ||
+    /^127\.\d+\.\d+\.\d+$/.test(name) ||
+    /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(name)
+  );
 }
 
 interface SSEClient {
@@ -55,14 +71,18 @@ export class SbpServer {
     rateLimit?: RateLimitOptions;
   };
   private sseClients = new Map<string, SSEClient>();
-  private sessions = new Map<string, { agentId: string; createdAt: number }>();
   private eventCounter = 0;
 
   constructor(options: ServerOptions = {}) {
+    const { requireAuth, apiKeys } = options.auth ?? {};
+    if (requireAuth && (!apiKeys?.length || apiKeys.some((key) => !key.trim()))) {
+      throw new Error("requireAuth is set but apiKeys is empty or holds a blank key");
+    }
+
     this.options = {
       port: options.port ?? 3000,
       host: options.host ?? "localhost",
-      cors: options.cors ?? true,
+      cors: options.cors ?? false,
       logging: options.logging ?? false,
       evaluationInterval: options.evaluationInterval ?? 100,
       defaultDecay: options.defaultDecay ?? { type: "exponential", half_life_ms: 300000 },
@@ -81,6 +101,27 @@ export class SbpServer {
   }
 
   private setupRoutes(): void {
+    // Without CORS, a web page mustn't reach this server. A cross-origin request
+    // carries Origin. A page that rebinds its DNS name to a loopback server is
+    // same-origin and can omit Origin, but its Host still names the attacker.
+    if (!this.options.cors) {
+      const loopbackOnly = isLoopbackHost(this.options.host);
+      this.app.addHook("onRequest", async (request, reply) => {
+        const rebound = loopbackOnly && !isLoopbackHost(request.hostname);
+        if (request.headers.origin !== undefined || rebound) {
+          reply.status(403).send({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: -32005,
+              message: "Forbidden: browser requests are refused unless the server enables cors",
+            },
+          });
+          return reply;
+        }
+      });
+    }
+
     // Authentication hook
     if (this.options.auth?.requireAuth) {
       this.app.addHook("onRequest", createAuthHook(this.options.auth));
@@ -89,7 +130,13 @@ export class SbpServer {
 
     // Rate limiting hook
     if (this.options.rateLimit) {
-      this.app.addHook("onRequest", createRateLimitHook(this.options.rateLimit));
+      this.app.addHook(
+        "onRequest",
+        createRateLimitHook({
+          ...this.options.rateLimit,
+          keyByApiKey: this.options.auth?.requireAuth ?? false,
+        })
+      );
     }
 
     // CORS
@@ -113,7 +160,7 @@ export class SbpServer {
       const stats = this.blackboard.inspect({ include: ["stats"] });
       return {
         status: "ok",
-        version: "0.2.0",
+        version: "0.2.1",
         transport: "streamable-http-sse",
         ...stats.stats,
       };
@@ -131,54 +178,75 @@ export class SbpServer {
 
     // Legacy JSON-RPC endpoint (for backwards compatibility)
     this.app.post("/rpc", async (request: FastifyRequest, reply: FastifyReply) => {
-      const body = request.body as JsonRpcRequest;
-      const response = await this.handleRpc(body, request);
-      reply.header("Content-Type", "application/json");
-      return response;
+      return this.handlePost(request, reply);
     });
 
     // Convenience REST endpoints
-    this.app.post("/emit", async (request) => {
-      const params = request.body as EmitParams;
-      return this.blackboard.emit(params);
+    this.app.post("/emit", async (request, reply) => {
+      return this.handleRest("sbp/emit", request.body, request, reply);
     });
 
-    this.app.post("/sniff", async (request) => {
-      const params = request.body as SniffParams;
-      return this.blackboard.sniff(params);
+    this.app.post("/sniff", async (request, reply) => {
+      return this.handleRest("sbp/sniff", request.body, request, reply);
     });
 
-    this.app.post("/scents", async (request) => {
-      const params = request.body as RegisterScentParams;
-      return this.blackboard.registerScent(params);
+    this.app.post("/scents", async (request, reply) => {
+      return this.handleRest("sbp/register_scent", request.body, request, reply);
     });
 
-    this.app.delete("/scents/:scent_id", async (request) => {
+    this.app.delete("/scents/:scent_id", async (request, reply) => {
       const { scent_id } = request.params as { scent_id: string };
-      return this.blackboard.deregisterScent({ scent_id });
+      return this.handleRest("sbp/deregister_scent", { scent_id }, request, reply);
     });
 
-    this.app.get("/inspect", async (request) => {
-      const query = request.query as { include?: string };
-      const include = query.include?.split(",") as InspectParams["include"];
-      return this.blackboard.inspect({ include });
+    this.app.get("/inspect", async (request, reply) => {
+      const { include } = request.query as { include?: unknown };
+      return this.handleRest(
+        "sbp/inspect",
+        { include: typeof include === "string" ? include.split(",") : include },
+        request,
+        reply
+      );
     });
 
     // Convenience REST endpoints - Traces
-    this.app.post("/inscribe", async (request) => {
-      const params = request.body as InscribeParams;
-      return this.blackboard.inscribe(params);
+    this.app.post("/inscribe", async (request, reply) => {
+      return this.handleRest("sbp/inscribe", request.body, request, reply);
     });
 
-    this.app.post("/read", async (request) => {
-      const params = request.body as ReadParams;
-      return this.blackboard.read(params);
+    this.app.post("/read", async (request, reply) => {
+      return this.handleRest("sbp/read", request.body, request, reply);
     });
 
-    this.app.post("/erase", async (request) => {
-      const params = request.body as EraseParams;
-      return this.blackboard.erase(params);
+    this.app.post("/erase", async (request, reply) => {
+      return this.handleRest("sbp/erase", request.body, request, reply);
     });
+  }
+
+  /**
+   * Handle a REST convenience route: same validator and handler as JSON-RPC
+   */
+  private async handleRest(
+    method: string,
+    params: unknown,
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<unknown> {
+    const paramsResult = validateParams(method, params);
+    if (!paramsResult.ok) {
+      reply.status(400);
+      return { jsonrpc: "2.0", id: null, error: paramsResult.error };
+    }
+
+    const response = await this.handleRpc(
+      { jsonrpc: "2.0", id: 0, method, params: paramsResult.params },
+      request
+    );
+    if ("error" in response) {
+      reply.status(500);
+      return { jsonrpc: "2.0", id: null, error: response.error };
+    }
+    return response.result;
   }
 
   /**
@@ -215,15 +283,7 @@ export class SbpServer {
       params: paramsResult.params,
     };
 
-    // Get or create session
-    let sessionId = request.headers["sbp-session-id"] as string | undefined;
-    if (!sessionId) {
-      sessionId = uuidv7();
-      this.sessions.set(sessionId, {
-        agentId: (request.headers["sbp-agent-id"] as string) || "unknown",
-        createdAt: Date.now(),
-      });
-    }
+    const sessionId = (request.headers["sbp-session-id"] as string | undefined) || uuidv7();
 
     // Handle JSON-RPC request
     const response = await this.handleRpc(validatedRequest, request);
@@ -256,7 +316,7 @@ export class SbpServer {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "Sbp-Session-Id": sessionId,
-      "Access-Control-Allow-Origin": "*",
+      ...(this.options.cors ? { "Access-Control-Allow-Origin": "*" } : {}),
     });
 
     // Register SSE client
@@ -347,11 +407,6 @@ export class SbpServer {
           // Set up trigger forwarding
           if (sessionId) {
             this.setupSSETrigger(scentParams.scent_id, sessionId);
-          }
-
-          // If agent_endpoint is provided, set up webhook delivery
-          if (scentParams.agent_endpoint) {
-            this.setupWebhookTrigger(scentParams.scent_id, scentParams.agent_endpoint);
           }
           break;
         }
@@ -453,46 +508,6 @@ export class SbpServer {
     });
   }
 
-  /**
-   * Set up webhook trigger delivery to an agent endpoint
-   */
-  private setupWebhookTrigger(scentId: string, endpoint: string): void {
-    this.blackboard.onTrigger(scentId, async (payload: TriggerPayload) => {
-      // Attempt webhook delivery with one retry
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Sbp-Protocol-Version": "0.1",
-            },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              method: "sbp/trigger",
-              params: payload,
-            }),
-            signal: AbortSignal.timeout(10000),
-          });
-
-          if (response.ok) return; // Success
-
-          // Retry on 5xx
-          if (response.status >= 500 && attempt === 0) {
-            await new Promise((r) => setTimeout(r, 1000));
-            continue;
-          }
-          break; // Don't retry on 4xx
-        } catch {
-          // Network error — retry once
-          if (attempt === 0) {
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        }
-      }
-    });
-  }
-
   async start(): Promise<void> {
     // Start blackboard evaluation loop
     this.blackboard.start();
@@ -505,6 +520,8 @@ export class SbpServer {
     console.log(`[SBP] Transport: SSE (Server-Sent Events)`);
     if (this.options.auth?.requireAuth) {
       console.log(`[SBP] Authentication: API key required`);
+    } else if (!isLoopbackHost(this.options.host)) {
+      console.warn(`[SBP] Warning: listening on ${this.options.host} with no authentication`);
     }
     if (this.options.rateLimit) {
       console.log(`[SBP] Rate limiting: ${this.options.rateLimit.maxRequests ?? 1000} req/${(this.options.rateLimit.windowMs ?? 60000) / 1000}s`);

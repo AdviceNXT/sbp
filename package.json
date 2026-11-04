@@ -10,12 +10,16 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "dev": "npm run dev --workspace=@advicenxt/sbp-server",
-    "start": "npm run start --workspace=@advicenxt/sbp-server"
+    "start": "npm run start --workspace=@advicenxt/sbp-server",
+    "demo": "tsx demo/incident.mts",
+    "check": "node scripts/check.mjs"
   },
   "devDependencies": {
+    "@redocly/cli": "^2.72.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.3.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   }
 }

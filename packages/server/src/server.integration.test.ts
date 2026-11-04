@@ -40,7 +40,7 @@ describe("SBP Server Integration", () => {
             expect(res.statusCode).toBe(200);
             const body = res.json();
             expect(body.status).toBe("ok");
-            expect(body.version).toBe("0.2.0");
+            expect(body.version).toBe("0.2.1");
         });
     });
 

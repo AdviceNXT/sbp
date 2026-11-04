@@ -12,12 +12,16 @@ export interface AuthOptions {
     requireAuth?: boolean;
     /** API keys authorized for trace write operations (inscribe/erase).
      *  If not set, falls back to apiKeys. When set, only these keys
-     *  can inscribe or erase traces — all apiKeys can still read. */
+     *  can inscribe or erase traces — all apiKeys can still read.
+     *  An empty list means no key can write traces. */
     traceWriteKeys?: string[];
 }
 
 /** Paths that skip authentication */
 const PUBLIC_PATHS = ["/health"];
+
+const TRACE_WRITE_METHODS = new Set(["sbp/inscribe", "sbp/erase"]);
+const TRACE_WRITE_ROUTES = new Set(["/inscribe", "/erase"]);
 
 /**
  * Create a Fastify onRequest hook for API key authentication.
@@ -35,7 +39,7 @@ export function createAuthHook(options: AuthOptions) {
         done: HookHandlerDoneFunction
     ): void {
         // Skip auth if not required
-        if (!requireAuth || apiKeys.length === 0) {
+        if (!requireAuth) {
             done();
             return;
         }
@@ -95,7 +99,7 @@ export function createAuthHook(options: AuthOptions) {
 /**
  * Create a preHandler hook for trace write permission enforcement.
  * This runs AFTER body parsing so we can inspect the JSON-RPC method.
- * Only traceWriteKeys can call sbp/inscribe or sbp/erase.
+ * Only traceWriteKeys can write traces, on the JSON-RPC and REST routes alike.
  */
 export function createTraceWriteHook(options: AuthOptions) {
     const { traceWriteKeys, requireAuth = false } = options;
@@ -105,15 +109,17 @@ export function createTraceWriteHook(options: AuthOptions) {
         reply: FastifyReply,
         done: HookHandlerDoneFunction
     ): void {
-        if (!requireAuth || !traceWriteKeys || traceWriteKeys.length === 0) {
+        if (!requireAuth || !traceWriteKeys) {
             done();
             return;
         }
 
-        const body = request.body as { method?: string } | undefined;
-        const method = body?.method;
+        const body = request.body as { method?: unknown } | null | undefined;
+        const isTraceWrite =
+            TRACE_WRITE_ROUTES.has(request.routeOptions.url ?? "") ||
+            (typeof body?.method === "string" && TRACE_WRITE_METHODS.has(body.method));
 
-        if (method === "sbp/inscribe" || method === "sbp/erase") {
+        if (isTraceWrite) {
             const authHeader = request.headers.authorization;
             const token = authHeader?.split(" ")[1];
 

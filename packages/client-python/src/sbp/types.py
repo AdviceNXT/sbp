@@ -4,9 +4,9 @@ SBP Type Definitions
 
 from __future__ import annotations
 
-from typing import Any, Literal, Union
-from pydantic import BaseModel, Field
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 
 # ============================================================================
 # DECAY MODELS
@@ -40,7 +40,7 @@ class ImmortalDecay(BaseModel):
     type: Literal["immortal"] = "immortal"
 
 
-DecayModel = Union[ExponentialDecay, LinearDecay, StepDecay, ImmortalDecay]
+DecayModel = ExponentialDecay | LinearDecay | StepDecay | ImmortalDecay
 
 
 def exponential_decay(half_life_ms: int) -> ExponentialDecay:
@@ -126,7 +126,7 @@ class CompositeCondition(BaseModel):
 
     type: Literal["composite"] = "composite"
     operator: Literal["and", "or", "not"]
-    conditions: list["ScentCondition"]
+    conditions: list[ScentCondition]
 
 
 class RateCondition(BaseModel):
@@ -152,7 +152,7 @@ class TraceCondition(BaseModel):
     expected: Any | None = None             # Expected value for comparison
 
 
-ScentCondition = Union[ThresholdCondition, CompositeCondition, RateCondition, TraceCondition]
+ScentCondition = ThresholdCondition | CompositeCondition | RateCondition | TraceCondition
 
 # Update forward refs for recursive types
 CompositeCondition.model_rebuild()

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.1
+
+Security fix for `@advicenxt/sbp-server`. Everyone running the server should upgrade. It now needs Node 22 or later.
+
+### Changed
+
+These change what the server accepts:
+
+- `agent_endpoint` must be empty or an `sse://` value. Any other value is refused with `-32602`, and the server no longer delivers triggers by webhook. This differs from `SPECIFICATION.md`, section 5.3.
+- CORS is off by default, and a request with an `Origin` header is refused with HTTP 403. Set the `cors` option to allow browser clients from any origin.
+- A server with `requireAuth` and no `apiKeys`, or with a blank key, refuses to start. An empty `traceWriteKeys` now means no key can write traces.
+- The CLI takes `--flag=value`, and refuses unknown flags, an `--api-key` or `SBP_API_KEYS` that is set but holds no keys, and a `--rate-limit` that isn't a positive whole number.
+- On a server bound to a loopback address with `cors` off, a request whose `Host` isn't a loopback name is refused with HTTP 403.
+- `/rpc` and the REST routes use the same validators and permission checks as `POST /sbp`. A malformed REST request gets HTTP 400.
+- Rate limits apply per verified API key, or per client address when authentication is off, and no longer follow `Sbp-Agent-Id`.
+- The server moves to Fastify 5 and Zod 4, so it no longer depends on versions with published advisories.
+
+### Other packages
+
+- `@advicenxt/sbp-client` 0.2.1 fixes its package. The published 0.2.0 has no compiled code, so it can't be imported.
+- `sbp-client` (Python) and `@advicenxt/sbp-types` 0.2.1 only correct the project links in their package metadata.
+
 ## 0.2.0
 
 ### Added

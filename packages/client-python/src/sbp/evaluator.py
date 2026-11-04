@@ -1,26 +1,28 @@
 """
 Scent condition evaluation
 """
-from typing import List, Dict, Any, Optional
-from sbp.types import (
-    Pheromone,
-    ScentCondition,
-    ThresholdCondition,
-    CompositeCondition,
-    RateCondition,
-    TraceCondition,
-    Trace,
-    TagFilter
-)
+from typing import Any
+
 from sbp.decay import compute_intensity, is_evaporated
+from sbp.types import (
+    CompositeCondition,
+    Pheromone,
+    RateCondition,
+    ScentCondition,
+    TagFilter,
+    ThresholdCondition,
+    Trace,
+    TraceCondition,
+)
+
 
 class EvaluationContext:
     def __init__(
         self,
-        pheromones: List[Pheromone],
+        pheromones: list[Pheromone],
         now: int,
-        emission_history: Optional[List[Dict[str, Any]]] = None,
-        traces: Optional[List[Trace]] = None
+        emission_history: list[dict[str, Any]] | None = None,
+        traces: list[Trace] | None = None
     ):
         self.pheromones = pheromones
         self.now = now
@@ -28,7 +30,7 @@ class EvaluationContext:
         self.traces = traces or []
 
 class EvaluationResult:
-    def __init__(self, met: bool, value: float, matching_pheromone_ids: List[str]):
+    def __init__(self, met: bool, value: float, matching_pheromone_ids: list[str]):
         self.met = met
         self.value = value
         self.matching_pheromone_ids = matching_pheromone_ids
@@ -46,7 +48,7 @@ def evaluate_condition(condition: ScentCondition, ctx: EvaluationContext) -> Eva
 
     return EvaluationResult(False, 0.0, [])
 
-def match_tags(tags: List[str], tag_filter: Optional[TagFilter]) -> bool:
+def match_tags(tags: list[str], tag_filter: TagFilter | None) -> bool:
     if not tag_filter:
         return True
 
@@ -65,12 +67,18 @@ def match_tags(tags: List[str], tag_filter: Optional[TagFilter]) -> bool:
     return True
 
 def compare(a: float, op: str, b: float) -> bool:
-    if op == ">=": return a >= b
-    if op == ">": return a > b
-    if op == "<=": return a <= b
-    if op == "<": return a < b
-    if op == "==": return a == b
-    if op == "!=": return a != b
+    if op == ">=":
+        return a >= b
+    if op == ">":
+        return a > b
+    if op == "<=":
+        return a <= b
+    if op == "<":
+        return a < b
+    if op == "==":
+        return a == b
+    if op == "!=":
+        return a != b
     return False
 
 def evaluate_threshold(condition: ThresholdCondition, ctx: EvaluationContext) -> EvaluationResult:
@@ -155,7 +163,7 @@ def evaluate_rate(condition: RateCondition, ctx: EvaluationContext) -> Evaluatio
 # TRACE CONDITION
 # ============================================================================
 
-def _get_nested_value(obj: Dict[str, Any], path: str) -> Any:
+def _get_nested_value(obj: dict[str, Any], path: str) -> Any:
     """Get a nested value using dot-separated path."""
     parts = path.split(".")
     current: Any = obj

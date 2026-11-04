@@ -3,13 +3,12 @@ SBP Condition Builders - Fluent API for building scent conditions
 """
 
 from sbp.types import (
-    ThresholdCondition,
     CompositeCondition,
     RateCondition,
-    TraceCondition,
     ScentCondition,
+    ThresholdCondition,
+    TraceCondition,
 )
-
 
 # ============================================================================
 # THRESHOLD HELPERS

@@ -7,6 +7,7 @@ import type { PheromoneStore } from "./store.js";
 import { MemoryStore } from "./store.js";
 import type { TraceStore } from "./trace-store.js";
 import { MemoryTraceStore } from "./trace-store.js";
+import { isSseEndpoint } from "./validation.js";
 import {
   type Pheromone,
   type PheromoneSnapshot,
@@ -284,7 +285,7 @@ export class Blackboard {
   registerScent(params: RegisterScentParams): RegisterScentResult {
     const {
       scent_id,
-      agent_endpoint,
+      agent_endpoint = "",
       condition,
       cooldown_ms = 0,
       activation_payload = {},
@@ -293,6 +294,10 @@ export class Blackboard {
       max_execution_ms = 30000,
       context_trails,
     } = params;
+
+    if (!isSseEndpoint(agent_endpoint)) {
+      throw new Error("Webhook delivery isn't supported: use an sse:// endpoint or leave it empty");
+    }
 
     const isUpdate = this.scents.has(scent_id);
 
@@ -593,30 +598,6 @@ export class Blackboard {
       } catch (err) {
         console.error(`[SBP] Trigger handler error for ${scent.scent_id}:`, err);
       }
-      return;
-    }
-
-    // Otherwise, HTTP POST to endpoint
-    try {
-      const response = await fetch(scent.agent_endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-SBP-Version": "0.1",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "sbp/trigger",
-          params: payload,
-        }),
-        signal: AbortSignal.timeout(scent.max_execution_ms),
-      });
-
-      if (!response.ok) {
-        console.error(`[SBP] Trigger failed for ${scent.scent_id}: ${response.status}`);
-      }
-    } catch (err) {
-      console.error(`[SBP] Trigger dispatch error for ${scent.scent_id}:`, err);
     }
   }
 

@@ -1,6 +1,6 @@
 [project]
 name = "sbp-client"
-version = "0.2.0"
+version = "0.2.1"
 description = "Stigmergic Blackboard Protocol - Python Client SDK"
 readme = "README.md"
 license = { text = "MIT" }
@@ -34,9 +34,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sbp-protocol/sbp"
-Documentation = "https://sbp.dev"
-Repository = "https://github.com/sbp-protocol/sbp"
+Homepage = "https://github.com/AdviceNXT/sbp"
+Documentation = "https://github.com/AdviceNXT/sbp/blob/main/SPECIFICATION.md"
+Repository = "https://github.com/AdviceNXT/sbp"
 
 [build-system]
 requires = ["hatchling"]

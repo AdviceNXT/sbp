@@ -1,41 +1,50 @@
 """
 SBP Local Blackboard Implementation
 """
-import time
 import asyncio
-import uuid
 import hashlib
 import json
-from typing import Dict, List, Optional, Any, Callable, Awaitable, Set
+import time
+import uuid
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from sbp.types import (
-    Pheromone, PheromoneSnapshot,
-    ScentCondition, DecayModel,
-    EmitParams, EmitResult,
-    SniffParams, SniffResult, AggregateStats,
-    RegisterScentParams, RegisterScentResult,
-    DeregisterScentResult,
-    EvaporateParams, EvaporateResult,
-    InspectResult, TriggerPayload, TagFilter,
-    Trace, InscribeParams, InscribeResult,
-    ReadParams, ReadResult,
-    EraseParams, EraseResult,
-    TRACE_MAX_VALUE_SIZE,
-)
 from sbp.decay import compute_intensity, is_evaporated
-from sbp.evaluator import evaluate_condition, EvaluationContext, match_tags
+from sbp.evaluator import EvaluationContext, evaluate_condition, match_tags
+from sbp.types import (
+    TRACE_MAX_VALUE_SIZE,
+    AggregateStats,
+    DeregisterScentResult,
+    EmitParams,
+    EmitResult,
+    EraseParams,
+    EraseResult,
+    InscribeParams,
+    InscribeResult,
+    Pheromone,
+    PheromoneSnapshot,
+    ReadParams,
+    ReadResult,
+    RegisterScentParams,
+    RegisterScentResult,
+    SniffParams,
+    SniffResult,
+    Trace,
+    TriggerPayload,
+)
+
 
 class LocalBlackboard:
     def __init__(self):
-        self.pheromones: Dict[str, Pheromone] = {}
-        self.scents: Dict[str, Any] = {} # Storing internal scent dicts
-        self.handlers: Dict[str, Callable[[TriggerPayload], Awaitable[None]]] = {}
-        self.emission_history: List[Dict[str, Any]] = []
+        self.pheromones: dict[str, Pheromone] = {}
+        self.scents: dict[str, Any] = {} # Storing internal scent dicts
+        self.handlers: dict[str, Callable[[TriggerPayload], Awaitable[None]]] = {}
+        self.emission_history: list[dict[str, Any]] = []
         self.start_time = int(time.time() * 1000)
 
         # Trace storage: composite key "trail\0key" -> Trace
-        self.traces: Dict[str, Trace] = {}
-        self.traces_by_id: Dict[str, str] = {}  # id -> composite key
+        self.traces: dict[str, Trace] = {}
+        self.traces_by_id: dict[str, str] = {}  # id -> composite key
 
         # Options
         self.emission_history_window = 60000
@@ -74,7 +83,7 @@ class LocalBlackboard:
     def _now(self) -> int:
         return int(time.time() * 1000)
 
-    def _hash_payload(self, payload: Dict[str, Any]) -> str:
+    def _hash_payload(self, payload: dict[str, Any]) -> str:
         content = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
@@ -159,21 +168,27 @@ class LocalBlackboard:
     def sniff(self, params: SniffParams) -> SniffResult:
         now = self._now()
         results = []
-        aggs: Dict[str, AggregateStats] = {}
+        aggs: dict[str, AggregateStats] = {}
 
         # Temp agg storage: key -> [sum, count, max]
-        temp_aggs: Dict[str, List[float]] = {}
+        temp_aggs: dict[str, list[float]] = {}
 
         for p in self.pheromones.values():
-            if params.trails and p.trail not in params.trails: continue
-            if params.types and p.type not in params.types: continue
+            if params.trails and p.trail not in params.trails:
+                continue
+            if params.types and p.type not in params.types:
+                continue
 
             intensity = compute_intensity(p, now)
 
-            if not params.include_evaporated and intensity < p.ttl_floor: continue
-            if intensity < params.min_intensity: continue
-            if params.max_age_ms and (now - p.emitted_at > params.max_age_ms): continue
-            if params.tags and not match_tags(p.tags, params.tags): continue
+            if not params.include_evaporated and intensity < p.ttl_floor:
+                continue
+            if intensity < params.min_intensity:
+                continue
+            if params.max_age_ms and (now - p.emitted_at > params.max_age_ms):
+                continue
+            if params.tags and not match_tags(p.tags, params.tags):
+                continue
 
             # Add to results
             snapshot = PheromoneSnapshot(
@@ -291,7 +306,7 @@ class LocalBlackboard:
                 scent["last_triggered_at"] = now
                 await self._dispatch_trigger(scent, result, now)
 
-    async def _dispatch_trigger(self, scent: Dict[str, Any], result, now: int):
+    async def _dispatch_trigger(self, scent: dict[str, Any], result, now: int):
         # Build context
         context = []
         matching_ids = set(result.matching_pheromone_ids)
@@ -368,7 +383,8 @@ class LocalBlackboard:
         serialized = json.dumps(value)
         if len(serialized) > TRACE_MAX_VALUE_SIZE:
             raise ValueError(
-                f"Trace value exceeds maximum size ({len(serialized)} > {TRACE_MAX_VALUE_SIZE} bytes)"
+                f"Trace value exceeds maximum size "
+                f"({len(serialized)} > {TRACE_MAX_VALUE_SIZE} bytes)"
             )
 
         ck = self._trace_key(trail, key)
@@ -411,7 +427,7 @@ class LocalBlackboard:
     def read(self, params: ReadParams) -> ReadResult:
         """Read traces from the blackboard."""
         now = self._now()
-        results: List[Trace] = []
+        results: list[Trace] = []
 
         for t in self.traces.values():
             if params.trails and t.trail not in params.trails:
@@ -434,7 +450,7 @@ class LocalBlackboard:
     def erase(self, params: EraseParams) -> EraseResult:
         """Erase traces matching criteria."""
         now = self._now()
-        to_remove: List[str] = []
+        to_remove: list[str] = []
         trails_affected: set[str] = set()
 
         for ck, t in self.traces.items():
@@ -460,7 +476,7 @@ class LocalBlackboard:
 
 
 # Singleton instance for shared local mode
-_shared_blackboard: Optional[LocalBlackboard] = None
+_shared_blackboard: LocalBlackboard | None = None
 
 def get_shared_blackboard() -> LocalBlackboard:
     global _shared_blackboard
